@@ -7,7 +7,7 @@
  * (origin, method, body size, field shapes, embedded image bytes) before it
  * reaches the mirror. Selection screenshots stay in memory: the mirror holds
  * the decoded bytes and a tool persists them only when the model actually
- * consumes them (view_canvas), so dead screenshots never hit the disk.
+ * consumes them (canvas action=view), so dead screenshots never hit the disk.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'

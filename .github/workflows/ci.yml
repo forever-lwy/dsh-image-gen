@@ -1,8 +1,10 @@
 name: CI
 
+# Pushes run nothing (master and the CI-written release branch alike); v*
+# tags go through release.yml. Run this by hand or on pull requests.
 on:
-  push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read

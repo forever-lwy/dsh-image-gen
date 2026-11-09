@@ -1,3 +1,10 @@
+> **这是 [shanliuling/dsh-image-gen](https://github.com/shanliuling/dsh-image-gen) 的 fork**，包名为 `@forever-lwy/dsh-image-gen`，安装来源为 `github:forever-lwy/dsh-image-gen`（默认分支 `release` 存放预构建版本）。版本号为上游 `x.y.(patch×100+N)`，例如 0.11.101 基于上游 0.11.1。与上游的差异：
+>
+> - tldraw 无限画布拆为按需加载的 `client.canvas.js`，首次显示画布时才下载；主包从约 5.1MB 降到约 0.8MB。
+> - `canvas_state` 与 `view_canvas` 合并为一个 `canvas` 工具（`action: state | view`）。
+> - 画布摘要不再写入系统提示：它随每次编辑、选择和秒数变化，会让不支持增量系统提示的模型路由丢失整段历史的前缀缓存。模型通过 `canvas` 工具按需读取。
+> - 发版：`main` 只放源码；推送 `v<版本>` 标签后由 GitHub Actions 构建、测试并写入 `release` 分支。
+
 <div align="center">
 
 <img src="docs/assets/readme/hero-zh.webp" alt="dsh-image-gen 中文功能概览" width="100%" />

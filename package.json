@@ -1,17 +1,17 @@
 {
-  "name": "dsh-image-gen",
-  "version": "0.11.1",
-  "description": "Bring ChatGPT-like image generation to DeepSeek Harness — Gemini, OpenAI, Seedream, DashScope, local ComfyUI & more.",
+  "name": "@forever-lwy/dsh-image-gen",
+  "version": "0.11.101",
+  "description": "Fork of dsh-image-gen with the tldraw canvas loaded on demand. Bring ChatGPT-like image generation to DeepSeek Harness — Gemini, OpenAI, Seedream, DashScope, local ComfyUI & more.",
   "type": "module",
   "author": "shanliuling",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shanliuling/dsh-image-gen.git"
+    "url": "git+https://github.com/forever-lwy/dsh-image-gen.git"
   },
   "bugs": {
-    "url": "https://github.com/shanliuling/dsh-image-gen/issues"
+    "url": "https://github.com/forever-lwy/dsh-image-gen/issues"
   },
-  "homepage": "https://github.com/shanliuling/dsh-image-gen#readme",
+  "homepage": "https://github.com/forever-lwy/dsh-image-gen#readme",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
@@ -28,6 +28,7 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
+    "lib/client.canvas.js",
     "lib/types/**/*.d.ts",
     "skills/**/*.md",
     "cordis.patch.yml",
@@ -63,7 +64,8 @@
     "pack:check": "pnpm pack --dry-run"
   },
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": "*"
   },
   "license": "Apache-2.0",
   "keywords": [

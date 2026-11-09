@@ -31,7 +31,7 @@ try {
   const tarball = join(home, packed[0].filename)
   await writeFile(join(home, 'package.json'), JSON.stringify({
     name: 'image-gen-package-verification', private: true, type: 'module', dependencies: {
-      'dsh-image-gen': `file:${tarball.replaceAll('\\', '/')}`,
+      [manifest.name]: `file:${tarball.replaceAll('\\', '/')}`,
       '@deepseek-ai/cordis': '4.0.5',
       '@deepseek-ai/schemastery': '3.18.4',
       '@deepseek-ai/dsh-app-boot': '0.2.0-rc.2',
@@ -46,7 +46,7 @@ try {
   execFileSync(process.execPath, [npm, 'install', '--ignore-scripts', '--no-audit', '--no-fund'], {
     cwd: home, stdio: 'inherit', timeout: 180_000,
   })
-  assert.ok(!realpathSync(join(home, 'node_modules', 'dsh-image-gen')).startsWith(root), 'The installed plugin must not link to the source checkout')
+  assert.ok(!realpathSync(join(home, 'node_modules', manifest.name)).startsWith(root), 'The installed plugin must not link to the source checkout')
   await copyFile(join(root, 'scripts', 'fixtures', 'package-settings.mjs'), join(home, 'verify.mjs'))
   for (const version of ['3.18.4', '3.18.2']) {
     execFileSync(process.execPath, [join(home, 'verify.mjs'), version], { cwd: home, stdio: 'inherit', timeout: 60_000 })

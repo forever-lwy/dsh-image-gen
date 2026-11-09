@@ -393,9 +393,12 @@ export function apply(ctx: Context, config: Config = {}): void {
       }),
     }), 'dsh-image-gen: canvas asset route')
   })
-  // A few lines of live canvas context per model request. The service is an
-  // optional dependency: hosts without dsh-system-prompt boot unchanged and
-  // the canvas tools remain the model's way to discover the canvas.
+  // Image tool defaults for the system prompt. The service is an optional
+  // dependency: hosts without dsh-system-prompt boot unchanged. The live
+  // canvas is deliberately absent here: its digest changes with every edit,
+  // selection and second, and a changing system prompt discards the cached
+  // conversation prefix on routes without in-history prompt updates. The
+  // model reads it through the canvas tool instead.
   ctx.inject(['systemPrompt'], (promptCtx: Context) => {
     void refreshImageToolContext()
     ctx.inject(['credentials'], credentialCtx => {
@@ -407,14 +410,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       order: 59,
       text: () => imageToolContext(current(), configuredImageProviders),
     }), 'dsh-image-gen: image tool context')
-    promptCtx.effect(() => promptCtx.systemPrompt.context({
-      name: 'dsh-image-gen:canvas',
-      order: 60,
-      text: () => canvasMirror.digest(),
-    }), 'dsh-image-gen: canvas context')
   })
   registerCanvasTools(ctx, canvasMirror, {
-    // Materialization hook: view_canvas persists a screenshot only when the
+    // Materialization hook: canvas action=view persists a screenshot only when the
     // model actually views it. The content-addressed store dedupes repeat
     // views, and dead screenshots never reach the disk.
     persistSelectionImage: image => ctx.attachments.saveImage({ data: image.data, mediaType: image.mediaType, name: 'canvas-selection' }),
@@ -637,7 +635,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.tools.register(defineTool({
     name: 'edit_image',
-    description: 'Edit, combine, or restyle existing images with the configured provider. Images attached inline to the latest human message are already readable DSH attachments even when no workspace file exists. In that case, call edit_image immediately with prompt only (plus output options such as output_format=gif when the user wants an animation); NEVER call read_image, glob, or shell to locate them, and NEVER invent @ paths. All inline images will be used in upload order. For specific older conversation images use source_attachment_id or source_attachment_ids; both canonical sha256: IDs and full bare SHA-256 digests are accepted. For files the user explicitly names in the workspace use source_path or source_paths. For what the user selected or drew on the image-gen workbench canvas (for example a hand-drawn sketch) use source=canvas_selection; canvas_state can verify a selection exists first. Provide exactly one selector field. Without a selector, images from the latest human message take priority; only when that message has no images does editing fall back to the newest conversation image. When the user wants a person, character, or object from the reference images kept as the same identity, write short hard identity-preservation instructions (use the same subject from the references; do not redesign it or synthesize a similar-looking replacement; change only scene, clothing, pose, lighting, style, or composition) instead of long generic appearance descriptions, which make the model replace the subject with a synthesized lookalike.',
+    description: 'Edit, combine, or restyle existing images with the configured provider. Images attached inline to the latest human message are already readable DSH attachments even when no workspace file exists. In that case, call edit_image immediately with prompt only (plus output options such as output_format=gif when the user wants an animation); NEVER call read_image, glob, or shell to locate them, and NEVER invent @ paths. All inline images will be used in upload order. For specific older conversation images use source_attachment_id or source_attachment_ids; both canonical sha256: IDs and full bare SHA-256 digests are accepted. For files the user explicitly names in the workspace use source_path or source_paths. For what the user selected or drew on the image-gen workbench canvas (for example a hand-drawn sketch) use source=canvas_selection; canvas action=state can verify a selection exists first. Provide exactly one selector field. Without a selector, images from the latest human message take priority; only when that message has no images does editing fall back to the newest conversation image. When the user wants a person, character, or object from the reference images kept as the same identity, write short hard identity-preservation instructions (use the same subject from the references; do not redesign it or synthesize a similar-looking replacement; change only scene, clothing, pose, lighting, style, or composition) instead of long generic appearance descriptions, which make the model replace the subject with a synthesized lookalike.',
     parameters: {
       prompt: { type: 'string', required: true, description: 'Describe the changes to make while preserving everything else that should remain.' },
       provider: { type: 'string', enum: ['google', 'openai', 'openai-compat', 'seedream', 'dashscope', 'xai', 'zhipu', 'comfyui', 'chatgpt-sub', 'grok-sub', 'google-sub'], description: 'OMIT unless the user explicitly requests a specific image provider. Omission uses the saved default; never guess a channel or fill this with an empty string. Subscription providers edit through their logged-in accounts.' },

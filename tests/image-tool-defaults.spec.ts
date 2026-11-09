@@ -75,10 +75,10 @@ describe('image tool defaults and placeholders', () => {
       expect(h.tool(name).parameters.properties.model.description).toContain('OMIT unless the user explicitly requests')
     }
   })
-  it('disposes image and canvas prompt contexts with their Cordis scope', () => {
+  it('disposes the image prompt context with its Cordis scope', () => {
     const h = harness()
-    expect(h.contexts).toHaveLength(2)
-    expect(h.promptDisposers).toHaveLength(2)
+    expect(h.contexts).toHaveLength(1)
+    expect(h.promptDisposers).toHaveLength(1)
     for (const dispose of h.promptDisposers) dispose()
     expect(h.contexts).toHaveLength(0)
   })

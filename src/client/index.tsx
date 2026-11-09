@@ -64,7 +64,7 @@ import { PLUGIN_STYLE } from './plugin-style.js'
 import { GIF_STYLE } from './gif-style.js'
 import { createCanvasSessionSelection, startConversationLandings, type CanvasSessions, type CanvasSessionSelection } from './tl/conversation-landings.js'
 import { STUDIO_STYLE } from './studio-style.js'
-import { TL_CSS } from './tl/tl-css.js'
+import { setCanvasStyleAnchor } from './tl/lazy-studio-canvas.js'
 import { TL_THEME_CSS } from './tl/tl-theme-css.js'
 import { INSPIRATION_STYLE } from './inspiration-style.js'
 import {
@@ -263,10 +263,19 @@ export function apply(ctx: Context): void {
   ctx.effect(() => {
     const style = document.createElement('style')
     style.dataset.plugin = 'dsh-image-gen'
-    style.textContent = `${PLUGIN_STYLE}\n${GIF_STYLE}\n${STUDIO_STYLE}\n${INSPIRATION_STYLE}\n${PROVIDER_PILL_STYLE}\n${TL_CSS}\n${TL_THEME_CSS}`
+    style.textContent = `${PLUGIN_STYLE}\n${GIF_STYLE}\n${STUDIO_STYLE}\n${INSPIRATION_STYLE}\n${PROVIDER_PILL_STYLE}`
+    // tldraw's own stylesheet arrives with the lazily loaded canvas chunk and
+    // is inserted between these two, preserving the original cascade order.
+    const themeStyle = document.createElement('style')
+    themeStyle.dataset.plugin = 'dsh-image-gen'
+    themeStyle.textContent = TL_THEME_CSS
     document.head.appendChild(style)
+    document.head.appendChild(themeStyle)
+    setCanvasStyleAnchor(themeStyle)
     return () => {
+      setCanvasStyleAnchor(null)
       style.remove()
+      themeStyle.remove()
     }
   }, 'dsh-image-gen: styles')
 
@@ -332,9 +341,9 @@ export function apply(ctx: Context): void {
     const injectSettingsFace = (): SettingsFace => ({ scope, credentials: credentialsProxy, credentialsAvailable, locale, credentialEvents })
     ;(owner.slots.inject as (key: string, factory: () => () => void) => void)('plugins.bundle.config', () => ownerRegister({
       name: 'plugins.bundle.config',
-      // Keyed slots select by bundle package name, and this plugin ships as the
-      // 'dsh-image-gen' bundle.
-      key: 'dsh-image-gen',
+      // Keyed slots select by bundle package name, and this fork ships as the
+      // '@forever-lwy/dsh-image-gen' bundle.
+      key: '@forever-lwy/dsh-image-gen',
       locale,
       inject: injectSettingsFace,
     }, ImageGenerationSettingsCard))

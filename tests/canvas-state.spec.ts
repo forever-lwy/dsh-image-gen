@@ -127,7 +127,7 @@ describe('canvas mirror digest', () => {
     expect(digest).toContain('draw (freehand stroke)')
     expect(digest).toContain('Selection: 1 shape (draw)')
     expect(digest).toContain('selected: draw (freehand stroke)')
-    expect(digest).toContain('view_canvas')
+    expect(digest).toContain('action=view')
     expect(mirror.latestSelectionImage()?.data).toEqual(new Uint8Array([9, 9, 9]))
   })
 

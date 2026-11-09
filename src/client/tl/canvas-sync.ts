@@ -7,7 +7,7 @@
  * snapshot to the canvas-state route. When the selection settles, it also
  * exports a fallback PNG screenshot (persistent images may come from a
  * different conversation), which the host
- * turns into a durable attachment (view_canvas / edit_image
+ * turns into a durable attachment (canvas action=view / edit_image
  * source=canvas_selection read exactly that).
  *
  * Pushes are fire-and-forget: failures warn in the console and the next

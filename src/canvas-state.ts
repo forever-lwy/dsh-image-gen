@@ -4,7 +4,7 @@
  * The tldraw canvas lives in the browser; the conversation agent lives in the
  * host process. Browser instances push compact `CanvasStatePush` snapshots
  * through the canvas-state route, and this mirror is the host-side truth the
- * system-prompt digest, the canvas_state / view_canvas tools, and the
+ * canvas tool (state digest and selection view) and the
  * edit_image `canvas_selection` source all read from. Nothing here is
  * persisted: the mirror dies with the host process, matching the canvas's
  * own session-scratch semantics.
@@ -228,7 +228,7 @@ export class CanvasMirror {
         lines.push(`- (${unlistedSelection} further selected shapes not itemized)`)
       }
       const screenshot = entry.selectionImage !== undefined
-        ? 'A screenshot of the selection is available; call view_canvas to see it. edit_image with source=canvas_selection uses separately synchronized originals, including images from earlier conversations and imports, plus the screenshot for mixed selections. Provider reference-count limits still apply.'
+        ? 'A screenshot of the selection is available; call canvas with action=view to see it. edit_image with source=canvas_selection uses separately synchronized originals, including images from earlier conversations and imports, plus the screenshot for mixed selections. Provider reference-count limits still apply.'
         : entry.selectionError !== undefined
           ? `Selection synchronization failed: ${entry.selectionError}. Ask the user to retry using the canvas status bar. Do not claim that image-only selections are invisible or suggest adding a stroke.`
           : 'The selection preview and original images are being prepared. Wait for the canvas status bar to report ready, then retry.'

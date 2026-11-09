@@ -1,12 +1,14 @@
 /**
  * Model-facing tools over the mirrored workbench canvas state.
  *
- * `canvas_state` answers "what is on the canvas right now" with a compact
- * inventory; `view_canvas` returns the latest selection screenshot as a real
- * image block so the model can look at hand-drawn sketches and annotated
- * selections the way it looks at any conversation image. Both tools stay
- * registered when no canvas is connected — their answers then tell the model
- * to ask the user to open the workbench instead of failing silently.
+ * One `canvas` tool: `action=state` answers "what is on the canvas right now"
+ * with a compact inventory; `action=view` returns the latest selection
+ * screenshot as a real image block so the model can look at hand-drawn
+ * sketches and annotated selections the way it looks at any conversation
+ * image. It stays registered when no canvas is connected — its answer then
+ * tells the model to ask the user to open the workbench instead of failing
+ * silently. The canvas is disclosed only through this tool, never through the
+ * system prompt: its state changes with every edit, selection and second.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
@@ -24,19 +26,21 @@ export type CanvasSelectionImageStore = {
 export interface CanvasToolsDeps {
   /**
    * Materializes an in-memory selection screenshot as a durable attachment.
-   * Called by view_canvas only, at the moment the image actually enters the
+   * Called by canvas action=view only, at the moment the image actually enters the
    * conversation — the durable store is content-addressed, so repeated views
    * of the same bytes reuse one object and dead screenshots never persist.
    */
   persistSelectionImage(image: CanvasSelectionImage): Promise<ImageAttachmentRef>
 }
 
-/** Register the canvas tools on a context that owns a canvas mirror. */
+/** Register the canvas tool on a context that owns a canvas mirror. */
 export function registerCanvasTools(ctx: Context, mirror: CanvasMirror, deps: CanvasToolsDeps): void {
   ctx.tools.register(defineTool({
-    name: 'canvas_state',
-    description: 'Inspect the current state of the image-gen workbench infinite canvas: what shapes are on it (generated images, hand-drawn strokes, text notes) and what is currently selected. Use whenever the user refers to "the canvas", something they drew or placed there, or a selection, and before view_canvas or edit_image with source=canvas_selection.',
-    parameters: {},
+    name: 'canvas',
+    description: 'The image-gen workbench infinite canvas. action=state lists what is on it (generated images, hand-drawn strokes, text notes) and what is selected; call it whenever the user refers to the canvas, something they drew or placed there, or a selection. action=view returns the current selection as an image so you can look at sketches and annotations; when nothing is selected, ask the user to select the shapes first. To edit from the selection, use edit_image with source=canvas_selection.',
+    parameters: {
+      action: { type: 'string', required: true, enum: ['state', 'view'], description: 'state: inventory and selection; view: selection screenshot.' },
+    },
     output: {
       schema: {
         type: 'object', additionalProperties: false, properties: {
@@ -45,36 +49,12 @@ export function registerCanvasTools(ctx: Context, mirror: CanvasMirror, deps: Ca
           nodeCount: { type: 'integer', required: true },
           selectionCount: { type: 'integer', required: true },
           hasSelectionImage: { type: 'boolean', required: true },
-        },
-      },
-      render: (_args: unknown, value: CanvasStateValue) => [{ type: 'text' as const, text: value.digest }],
-    },
-    async execute(): Promise<CanvasStateValue> {
-      const entry = mirror.latest()
-      return {
-        digest: mirror.digest(),
-        connected: entry !== undefined,
-        nodeCount: entry?.nodeCount ?? 0,
-        selectionCount: entry?.selectionCount ?? 0,
-        hasSelectionImage: mirror.latestSelectionImage() !== undefined,
-      }
-    },
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'view_canvas',
-    description: 'View the current selection on the image-gen workbench infinite canvas as an image (a screenshot the canvas pushed for its selection: hand-drawn sketches, annotated images, or any selected shapes). Call it after canvas_state confirms a selection exists. When nothing is selected, ask the user to select the shapes first. The image becomes part of the conversation, so you can reason about it directly.',
-    parameters: {},
-    output: {
-      schema: {
-        type: 'object', additionalProperties: false, properties: {
-          digest: { type: 'string', required: true },
           attachment: { type: 'object', additionalProperties: false, properties: {
             attachmentId: { type: 'string', required: true }, mediaType: { type: 'string', required: true }, bytes: { type: 'integer', required: true }, width: { type: 'integer', required: true }, height: { type: 'integer', required: true }, name: { type: 'string' },
           } },
         },
       },
-      render: (_args: unknown, value: ViewCanvasValue) => {
+      render: (_args: unknown, value: CanvasValue) => {
         if (value.attachment === undefined) {
           return [{ type: 'text' as const, text: value.digest }]
         }
@@ -84,31 +64,33 @@ export function registerCanvasTools(ctx: Context, mirror: CanvasMirror, deps: Ca
         ]
       },
     },
-    async execute(): Promise<ViewCanvasValue> {
+    async execute(args: { action?: unknown }): Promise<CanvasValue> {
+      if (args.action !== 'state' && args.action !== 'view') throw new Error('canvas: action must be "state" or "view"')
+      const entry = mirror.latest()
       const image = mirror.latestSelectionImage()
+      const value: CanvasValue = {
+        digest: mirror.digest(),
+        connected: entry !== undefined,
+        nodeCount: entry?.nodeCount ?? 0,
+        selectionCount: entry?.selectionCount ?? 0,
+        hasSelectionImage: image !== undefined,
+      }
+      if (args.action === 'state' || image === undefined) return value
       // This is the materialization moment: only a screenshot the model
       // actually views becomes a durable attachment. Everything the canvas
       // pushed but nobody looked at stays memory-only and dies with the
       // selection or the canvas itself.
-      const attachment = image === undefined ? undefined : await deps.persistSelectionImage(image)
-      return {
-        digest: mirror.digest(),
-        ...(attachment === undefined ? {} : { attachment: attachmentMeta(attachment) }),
-      }
+      return { ...value, attachment: attachmentMeta(await deps.persistSelectionImage(image)) }
     },
   }))
 }
 
-interface CanvasStateValue {
+interface CanvasValue {
   digest: string
   connected: boolean
   nodeCount: number
   selectionCount: number
   hasSelectionImage: boolean
-}
-
-interface ViewCanvasValue {
-  digest: string
   attachment?: ImageAttachmentRef
 }
 
@@ -126,7 +108,7 @@ function attachmentMeta(ref: ImageAttachmentRef): ImageAttachmentRef {
 /**
  * Resolve the mirrored canvas selection as an edit reference image for
  * edit_image's `canvas_selection` source. The screenshot comes straight from
- * the mirror's in-memory bytes — identical to what view_canvas shows the
+ * the mirror's in-memory bytes — identical to what canvas action=view shows the
  * model — and is never persisted here: reference images go to the image
  * provider, not the conversation.
  */

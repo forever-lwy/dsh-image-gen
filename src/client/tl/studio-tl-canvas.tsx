@@ -11,11 +11,12 @@ import {
   type TLImageShape,
 } from 'tldraw'
 import { blobToDataUrl } from '../browser-image-utils.js'
-import { clearAttachmentCache, fetchAttachmentBlob } from '../image-cache.js'
+import { fetchAttachmentBlob } from '../image-cache.js'
 import { CANVAS_MAX_PROMPT_CHARS } from '../../shared.js'
 import { applyBrandTheme, syncTldrawThemeWithHost } from './tl-brand-theme.js'
 import { startCanvasSync, type CanvasSyncStatus } from './canvas-sync.js'
-import { clearTlLandings, getTlLandingGeneration, registerTlLandingConsumer, type TlLandingItem } from './tl-canvas-bridge.js'
+import { getTlLandingGeneration, registerTlLandingConsumer, type TlLandingItem } from './tl-canvas-bridge.js'
+import { mountedCanvases, mountedEditors } from './studio-tl-registry.js'
 import { GALLERY_IMAGE_MIME, readGalleryImageDrop } from './gallery-image-transfer.js'
 
 /**
@@ -29,29 +30,7 @@ const MAX_DISPLAY_SIDE = 380
 const GRID_GAP = 40
 const GRID_COLS = 3
 
-const mountedCanvases = new Set<() => void>()
-const mountedEditors = new Set<Editor>()
-
-/** Reset canvas-owned data only. Gallery records and host attachments are untouched. */
-export function clearStudioTlCanvases(): boolean {
-  if (mountedCanvases.size === 0) return false
-  clearTlLandings()
-  for (const clear of mountedCanvases) clear()
-  clearAttachmentCache()
-  return true
-}
-
-/**
- * Cancel in-editor selection on every mounted canvas, keeping shapes and sync
- * untouched. Selection is interaction state tied to the surface: leaving the
- * studio page cancels it so a stale selection can neither resurface on return
- * nor linger in the host mirror.
- */
-export function deselectStudioTlCanvases(): boolean {
-  if (mountedEditors.size === 0) return false
-  for (const editor of mountedEditors) editor.run(() => editor.selectNone())
-  return true
-}
+export { clearStudioTlCanvases, deselectStudioTlCanvases } from './studio-tl-registry.js'
 
 /**
  * Dock the stock toolbar vertically along the left edge (Figma-style) instead
@@ -268,7 +247,7 @@ export const StudioTlCanvas: FC<{ lang?: 'zh' | 'en' }> = memo(function StudioTl
             return landTlItems(editor, items, () => active && generation === getTlLandingGeneration(), () => setLandingError(true))
           })
           // Mirror this canvas into the host so the conversation agent can
-          // see it (canvas_state / view_canvas / edit_image canvas_selection).
+          // see it (canvas tool / edit_image canvas_selection).
           let stopSync = startCanvasSync(editor, setSyncStatus)
           retrySync.current = () => stopSync.retry()
           const clear = (): void => {

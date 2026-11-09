@@ -40,7 +40,7 @@ import {
   type GalleryItem,
 } from './gallery-store.js'
 import { StudioView } from './studio-view.js'
-import { deselectStudioTlCanvases } from './tl/studio-tl-canvas.js'
+import { deselectStudioTlCanvases } from './tl/studio-tl-registry.js'
 import { InspirationView } from './inspiration-view.js'
 import { evictAttachmentCache, fetchAttachmentBlob } from './image-cache.js'
 import { shouldShowBatchBar } from './gallery-batch-bar.js'
