@@ -2,6 +2,8 @@
 import { activeComfyUIWorkflow, resolveComfyUIWorkflows, resolveProvider, withProviderOverrides, type Config } from './config.js'
 import { comfyUIWorkflowSlots } from './comfyui-workflow.js'
 
+const SUBSCRIPTIONS = ['chatgpt-sub', 'grok-sub', 'google-sub'] as const
+
 /** Workflow names listed for the model; a long list is cut so the system prompt stays small. */
 const MAX_LISTED_WORKFLOWS = 20
 
@@ -47,7 +49,11 @@ export function imageToolContext(config: Config, configuredProviders?: readonly 
     ...comfyUIWorkflowLine(config),
     'Unless the user explicitly requests a different image provider or model, OMIT provider and model from generate_image, generate_images and edit_image. Do not guess a channel or switch channels after an error.',
     'Omit unused optional arguments entirely; never fill them with empty strings. size and aspect_ratio are alternatives: provide at most one.',
-    'Subscription parameters: chatgpt-sub accepts size OR aspect_ratio, but NOT image_size. grok-sub image_size: 1K or 2K. google-sub image_size: 1K or 4K. Do not copy parameters from another provider.',
-    'Minimal calls: generate_image({"prompt":"a sailboat"}); edit_image({"prompt":"make the sail blue"}). A valid ChatGPT subscription ratio example is {"prompt":"a sailboat","aspect_ratio":"1:1"} with image_size and size omitted.',
+    // Subscription rules only while a subscription provider is in play, so
+    // API-key setups do not carry them in every request.
+    ...(SUBSCRIPTIONS.some(sub => sub === provider || configured === undefined || configured.includes(sub))
+      ? ['Subscription parameters: chatgpt-sub accepts size OR aspect_ratio, but NOT image_size (e.g. {"prompt":"a sailboat","aspect_ratio":"1:1"}). grok-sub image_size: 1K or 2K. google-sub image_size: 1K or 4K. Do not copy parameters from another provider.']
+      : []),
+    'Minimal calls: generate_image({"prompt":"a sailboat"}); edit_image({"prompt":"make the sail blue"}).',
   ].join('\n')
 }
