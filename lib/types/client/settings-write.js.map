@@ -1,0 +1,1 @@
+{"version":3,"file":"settings-write.js","sourceRoot":"","sources":["../../../src/client/settings-write.ts"],"names":[],"mappings":"AAAA,yFAAyF;AACzF,MAAM,CAAC,KAAK,UAAU,YAAY,CAChC,KAAsE,EACtE,KAAa,EACb,KAAc,EACd,eAAuB;IAEvB,IAAI,MAAM,KAAK,CAAC,GAAG,CAAC,KAAK,EAAE,KAAK,CAAC,KAAK,KAAK;QAAE,MAAM,IAAI,KAAK,CAAC,eAAe,CAAC,CAAA;AAC/E,CAAC"}
