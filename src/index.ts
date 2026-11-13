@@ -206,7 +206,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   // Migration on every read: relay configs saved under the old single OpenAI
   // slot keep moving to the dedicated compat row until the persisted copy is
   // rewritten, so both rows coexist after any upgrade.
-  let current: () => Config = () => migrateOpenAICompatConfig(plainConfig(config))
+  const current: () => Config = () => migrateOpenAICompatConfig(plainConfig(config))
   const knownWorkspaceRoots = new Set<string>()
   // Host-side mirror of the workbench infinite canvas: fed by the canvas-state
   // route, read by the canvas tools, the edit_image canvas_selection source,
@@ -233,10 +233,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   // Raw-image vault: re-read on every call so settings changes apply without a restart.
   const vaultConfig = () => vaultConfigOf(current())
 
-  const settingsHealth = installImageSettings(ctx, current(), {
-    setSource: source => { current = () => migrateOpenAICompatConfig(plainConfig(source())) },
-    onChange: () => { void refreshImageToolContext() },
-  })
+  const settingsHealth = installImageSettings(ctx)
   // Request-image variants are generated on demand and cached forever by the
   // attachment backend; keep that cache bounded without touching fresh files.
   ctx.effect(() => {
@@ -947,40 +944,14 @@ function imagePresentation(result: ToolResult) {
   return attachment === undefined ? undefined : { card: 'generic' as const, title: 'Generated image', content: [{ type: 'image' as const, attachment }] }
 }
 
-/** Settings hooks shape shared by both dsh-settings API generations. */
-interface SettingsHooks {
-  setSource: (source: () => Config) => void
-  onChange: () => void
-}
-
-/** The `settings` Context service as typed by dsh-settings 0.1.2–0.1.6. */
-interface SettingsSectionInstaller {
-  installSection(ctx: Context, namespace: unknown, schema: unknown, entry: unknown, hooks: SettingsHooks): void
-}
-
-/**
- * Wire the settings namespace across both dsh-settings API generations.
- * The probe reads the HOST's `settings` service, never the bundled
- * dsh-settings module: the build inlines that module, so its exports always
- * look like the compile-time generation while only the service handed to this
- * fiber reflects the running host. dsh-settings 0.1.2–0.1.6 put `installSection`
- * on the service, so the namespace registers through it; DSH 0.1.7 replaced it
- * with schema-derived forms served by the loader itself (keyed by entry id),
- * so its service carries no installer and a host without any settings service
- * simply never runs the callback. A modern host with an unmarked schema is
- * incompatible and must be diagnosed, while old hosts keep their installer.
- */
-function installImageSettings(ctx: Context, config: Config, hooks: SettingsHooks): () => SettingsHealth {
+/** Monitor the schema-derived settings service supplied by current DSH. */
+function installImageSettings(ctx: Context): () => SettingsHealth {
   let service: unknown
   ctx.inject(['settings'], settingsCtx => {
-    const settings = settingsCtx.settings as SettingsForms & Partial<SettingsSectionInstaller>
-    service = settings
-    const health = describeSettingsHealth(settings, Config)
+    service = settingsCtx.settings as SettingsForms
+    const health = describeSettingsHealth(service, Config)
     if (health.settings === 'live' && !health.liveSchema) {
       ctx.logger.warn('dsh-image-gen: the loaded schema lacks volatile fields required by this DSH settings service. Install @deepseek-ai/schemastery >=3.18.4 <4 in the plugin profile and check which copy the plugin resolves; settings cannot be saved with this schema.')
-    }
-    if (typeof settings.installSection === 'function') {
-      settings.installSection(ctx, IMAGE_GENERATION_NAMESPACE, Config, config, hooks)
     }
     return () => { service = undefined }
   })

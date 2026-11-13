@@ -199,22 +199,10 @@ interface SidebarRightTabsFace {
 
 
 
-/**
- * Required browser services. The settings form reader is deliberately absent:
- * DSH 0.1.7 serves it as `configForms` (keyed by the Loader entry id) while
- * 0.1.5/0.1.6 expose `settingsScope` (keyed by the legacy namespace), so it is
- * probed at runtime in `apply`. A static inject of either name would park this
- * fiber forever on hosts from the other generation — the issue #55 failure.
- */
+/** Current DSH serves live settings by the Loader entry id through configForms. */
 export const inject = ['slots', 'connection', 'remote', 'locale']
-
-/** Settings-form reader as shaped by DSH 0.1.7's `configForms` service. */
 interface ConfigFormsApi {
   get<T>(id: string): SettingsScope<T>
-}
-/** Settings-form reader as shaped by DSH 0.1.5/0.1.6's `settingsScope` service. */
-interface SettingsScopeApi {
-  bind<T>(options: { namespace: string }): SettingsScope<T>
 }
 
 /** Host with neither settings generation: reads empty, writes refuse, never throws. */
@@ -228,16 +216,8 @@ function degradedScope<T>(): SettingsScope<T> {
 
 /** Mount the settings card, generated-image card, and native conversation gallery view. */
 export function apply(ctx: Context): void {
-  // Probe instead of inject (see `inject`): 0.1.7+ resolves `configForms`,
-  // older hosts fall back to `settingsScope`, and `ctx.get` reads undefined for
-  // a service the host never declared.
   const configForms = ctx.get('configForms') as ConfigFormsApi | undefined
-  const settingsScopeApi = configForms === undefined
-    ? ctx.get('settingsScope') as SettingsScopeApi | undefined
-    : undefined
-  const scope = configForms?.get<ImageSettings>(IMAGE_GENERATION_ENTRY_ID)
-    ?? settingsScopeApi?.bind<ImageSettings>({ namespace: IMAGE_GENERATION_NAMESPACE })
-    ?? degradedScope<ImageSettings>()
+  const scope = configForms?.get<ImageSettings>(IMAGE_GENERATION_ENTRY_ID) ?? degradedScope<ImageSettings>()
   const locale = ctx.get('locale') as LocaleService | undefined
   const promotion = { enabled: false }
   ctx.effect(() => installDatalistScrollFix() || (() => {}), 'dsh-image-gen: datalist scroll handling')

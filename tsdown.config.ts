@@ -41,6 +41,8 @@ const client: UserConfig = {
   // client runtime) read NODE_ENV at runtime, so bake it in at build time.
   define: {
     'process.env.NODE_ENV': JSON.stringify('production'),
+    'import.meta.env.DEV': 'false',
+    'import.meta.env.MODE': JSON.stringify('production'),
     // Baked at build time; the canvas logs it so stale host caches are provable.
     __CANVAS_BUILD_TS__: JSON.stringify(new Date().toISOString()),
   },
