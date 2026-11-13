@@ -181,27 +181,6 @@ describe('DSH client compatibility', () => {
     await fiber.dispose()
   })
 
-  it('binds the legacy settingsScope namespaces on hosts without configForms', async () => {
-    const harness = clientHarness({
-      connection: {},
-      remote: { credentials: { describe: vi.fn(), set: vi.fn() } },
-      settingsGeneration: 'settingsScope',
-    })
-
-    const fiber = harness.ctx.plugin(plugin)
-    await fiber.await()
-
-    // DSH 0.1.5/0.1.6: no configForms service exists, so plugin settings
-    // still bind through settingsScope. Image placement no longer reads ui-chat.
-    expect(fiber.state).toBe(2)
-    expect(harness.legacyBind).toHaveBeenCalledWith({ namespace: 'image-generation' })
-    expect(harness.legacyBind).not.toHaveBeenCalledWith({ namespace: 'ui-chat' })
-    const injectSettingsCard = harness.registrations.get('plugins.bundle.config')
-    expect(() => injectSettingsCard?.()).not.toThrow()
-
-    await fiber.dispose()
-  })
-
   it('degrades to a read-only scope when the host has no settings service', async () => {
     const harness = clientHarness({
       connection: {},

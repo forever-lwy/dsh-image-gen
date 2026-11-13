@@ -7,8 +7,7 @@ export function describeSettingsHealth(settings: unknown, schema: z): SettingsHe
   const service = settings as { installSection?: unknown; describe?: unknown } | undefined
   const fields = Object.values(schema.dict ?? {})
   return {
-    settings: typeof service?.installSection === 'function' ? 'legacy'
-      : typeof service?.describe === 'function' ? 'live' : 'unavailable',
+    settings: typeof service?.describe === 'function' ? 'live' : 'unavailable',
     // Check what the host actually projects, rather than a version string or
     // the presence of a method on a different schemastery copy.
     liveSchema: fields.length > 0 && fields.every(field => field.meta.volatile === true),

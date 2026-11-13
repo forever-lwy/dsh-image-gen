@@ -48,21 +48,6 @@ describe('host settings compatibility', () => {
     }
   })
 
-  it('preserves the legacy installSection path when a legacy schema is used', () => {
-    const fields = Object.values(Config.dict!)
-    const previous = fields.map(field => field.meta.volatile)
-    const installSection = vi.fn()
-    try {
-      for (const field of fields) delete field.meta.volatile
-      const host = harness({ installSection })
-      expect(host.read()).toEqual({ settings: 'legacy', liveSchema: false })
-      expect(installSection).toHaveBeenCalledOnce()
-      expect(host.warn).not.toHaveBeenCalled()
-    } finally {
-      fields.forEach((field, index) => { field.meta.volatile = previous[index] })
-    }
-  })
-
   it('reports a missing settings service without exposing configuration or credentials', () => {
     expect(harness().read()).toEqual({ settings: 'unavailable', liveSchema: true })
   })

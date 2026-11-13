@@ -249,20 +249,11 @@ describe('image tool registration', () => {
   beforeEach(() => { vi.clearAllMocks() })
   afterEach(() => { vi.unstubAllGlobals() })
 
-  it('installs the settings section through the modern service API', () => {
+  it('lets the Loader serve settings instead of calling the removed installSection API', () => {
     const { ctx, tools, installSection } = harnessContext()
     apply(ctx, { provider: 'google', saveToWorkspace: false })
     expect(tools.map(tool => tool.name)).toEqual(['canvas', 'generate_image', 'generate_images', 'edit_image', 'find_inspiration'])
-    expect(installSection).toHaveBeenCalledTimes(1)
-    const [owner, ns, schema, entry, hooks] = installSection.mock.calls[0] as unknown as [Context, string, unknown, unknown, { setSource(): void; onChange(): void }]
-    expect(owner).toBe(ctx)
-    expect(ns).toBe('image-generation')
-    expect((schema as { toJSON?(): unknown }).toJSON).toBeTypeOf('function')
-    expect(entry).toMatchObject({ provider: 'google', saveToWorkspace: false })
-    expect(hooks.setSource).toBeTypeOf('function')
-    expect(hooks.onChange).toBeTypeOf('function')
-    // setSource must rewire the live config the tools read through.
-    hooks.setSource(() => ({ provider: 'openai', saveToWorkspace: false }))
+    expect(installSection).not.toHaveBeenCalled()
     expect(ctx.logger.warn).not.toHaveBeenCalled()
   })
 

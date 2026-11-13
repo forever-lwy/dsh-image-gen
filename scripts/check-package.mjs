@@ -32,23 +32,26 @@ try {
   await writeFile(join(home, 'package.json'), JSON.stringify({
     name: 'image-gen-package-verification', private: true, type: 'module', dependencies: {
       [manifest.name]: `file:${tarball.replaceAll('\\', '/')}`,
-      '@deepseek-ai/cordis': '4.0.5',
-      '@deepseek-ai/schemastery': '3.18.4',
-      '@deepseek-ai/dsh-app-boot': '0.2.0-rc.2',
-      '@deepseek-ai/dsh-config-editor': '0.2.0-rc.2',
-      '@deepseek-ai/dsh-settings': '0.2.0-rc.2',
+      '@deepseek-ai/dsh': '0.2.2-rc.3',
+      '@deepseek-ai/cordis': '4.1.0',
+      '@deepseek-ai/cordis-plugin-group': '1.1.0',
+      '@deepseek-ai/schemastery': '3.19.0',
+      '@deepseek-ai/dsh-app-boot': '0.2.2-rc.3',
+      '@deepseek-ai/dsh-config-editor': '0.2.2-rc.3',
+      '@deepseek-ai/dsh-settings': '0.2.2-rc.3',
       'schemastery-legacy': 'npm:@deepseek-ai/schemastery@3.18.2',
       react: '18.3.1',
       'react-test-renderer': '18.3.1',
     },
   }, null, 2))
-  console.log('Installing the tarball with published DSH 0.2.0-rc.2 services...')
-  execFileSync(process.execPath, [npm, 'install', '--ignore-scripts', '--no-audit', '--no-fund'], {
+  console.log('Installing the tarball with published DSH 0.2.2-rc.3 services...')
+  await copyFile(join(root, 'pnpm-workspace.yaml'), join(home, 'pnpm-workspace.yaml'))
+  execFileSync(process.execPath, [npm, 'exec', '--yes', '--package', 'pnpm@11.28.5', '--', 'pnpm', 'install', '--ignore-scripts', '--config.node-linker=hoisted', '--config.auto-install-peers=false'], {
     cwd: home, stdio: 'inherit', timeout: 180_000,
   })
   assert.ok(!realpathSync(join(home, 'node_modules', manifest.name)).startsWith(root), 'The installed plugin must not link to the source checkout')
   await copyFile(join(root, 'scripts', 'fixtures', 'package-settings.mjs'), join(home, 'verify.mjs'))
-  for (const version of ['3.18.4', '3.18.2']) {
+  for (const version of ['3.19.0', '3.18.2']) {
     execFileSync(process.execPath, [join(home, 'verify.mjs'), version], { cwd: home, stdio: 'inherit', timeout: 60_000 })
   }
 } finally {

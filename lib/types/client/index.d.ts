@@ -96,13 +96,7 @@ interface SettingsFace {
     credentialEvents?: CredentialEvents | undefined;
 }
 type SettingsCardProps = PropsRuntime<'settings.plugins.tab'> & InjectFace<SettingsFace>;
-/**
- * Required browser services. The settings form reader is deliberately absent:
- * DSH 0.1.7 serves it as `configForms` (keyed by the Loader entry id) while
- * 0.1.5/0.1.6 expose `settingsScope` (keyed by the legacy namespace), so it is
- * probed at runtime in `apply`. A static inject of either name would park this
- * fiber forever on hosts from the other generation — the issue #55 failure.
- */
+/** Current DSH serves live settings by the Loader entry id through configForms. */
 export declare const inject: string[];
 /** Mount the settings card, generated-image card, and native conversation gallery view. */
 export declare function apply(ctx: Context): void;
