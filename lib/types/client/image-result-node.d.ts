@@ -2,7 +2,13 @@
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment';
 export declare const IMAGE_RESULT_NODE_KIND = "dsh-image-result";
 export interface ImageResultPresentation {
-    readonly attachment: ImageAttachmentRef;
+    /**
+     * The stored raster attachment. Absent for an SVG result, which the
+     * attachment layer cannot store and which travels as `svg` markup instead.
+     */
+    readonly attachment?: ImageAttachmentRef;
+    /** SVG markup for a vector result; the card renders it from a data URL. */
+    readonly svg?: string;
     readonly prompt: string;
     readonly provider: string;
     readonly channel?: string;
@@ -20,6 +26,12 @@ export interface ImageResultPresentation {
         readonly mediaType: ImageMediaType;
     };
 }
+/** A result the attachment layer stored; the raster card renders and reuses it. */
+export type RasterImageResult = ImageResultPresentation & {
+    readonly attachment: ImageAttachmentRef;
+};
+/** True for a stored raster result, narrowing away the SVG-only shape. */
+export declare function isRasterResult(result: ImageResultPresentation): result is RasterImageResult;
 interface ImageResultState {
     /** Owning conversation turn; PTC (run_code) sub-call results carry no turn. */
     readonly turn?: number;
@@ -63,6 +75,11 @@ export declare const imageResultDefinition: ConversationNodeDefinitionLike<Image
  * PTC (run_code) sub-calls already have their own stable sub-call identity.
  */
 export declare function createImageResultDefinition(): ConversationNodeDefinitionLike<ImageResultState>;
+/**
+ * Identity of one result inside a card. A stored image is its attachment; an
+ * SVG has no attachment, so its markup stands in for one.
+ */
+export declare function resultIdentity(result: ImageResultPresentation): string;
 /** Parse the plugin-owned durable presentation metadata from a Tool result event. */
 export declare function imageResultFromMeta(value: unknown): ImageResultPresentation | undefined;
 /** Parse all successful images from either a single or batch Tool result. */

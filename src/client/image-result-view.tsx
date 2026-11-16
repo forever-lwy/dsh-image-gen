@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { imageRef, type ToolCallBlock } from './image-ref.js'
-import { imageResultsFromMeta, imageVersionKey, originalFromMeta, type ImageResultPresentation } from './image-result-node.js'
+import { imageResultsFromMeta, imageVersionKey, isRasterResult, originalFromMeta, resultIdentity, type ImageResultPresentation, type RasterImageResult } from './image-result-node.js'
 import {
   appendConversationImageRevision,
   loadConversationImageRevisionChain,
@@ -17,7 +17,7 @@ import { DICT, usePluginLanguage, type DictKey } from './plugin-i18n.js'
 import { CLOUD_IMAGE_PROVIDERS, STUDIO_ROUTE, type ImageProvider, type StudioGenerateResponse } from '../shared.js'
 import { conversationRegenerateRequest, gifOutputRequest } from './conversation-regenerate.js'
 import { GifCardOverlay, GifToolbarDownload, useGifCard } from './gif-card.js'
-import { GifCardEditChip, GifEditLightbox, GifEditNotice, useGifEdit } from './gif-edit.js'
+import { GIF_EDIT_PREFETCH_WAIT_MS, GIF_EDIT_SENT_TOAST_MS, GifCardEditChip, GifEditDoneDock, GifEditLightbox, GifEditNotice, useGifEdit, waitAtMost } from './gif-edit.js'
 import { GifStage } from './gif-player.js'
 import { startGalleryImageDrag } from './tl/gallery-image-transfer.js'
 
@@ -34,7 +34,8 @@ export interface ImageResultNodeProps {
 export function GeneratedImageCard(props: ImageCardProps) {
   const result = imageResultFromBlock(props.block)
   if (props.promoted && result !== undefined) return <PromotedResultNotice locale={props.locale} />
-  return <ImageResultCard result={result} locale={props.locale} sessionId={props.sessionId} openFile={props.openFile} />
+  if (result === undefined) return <ImageResultCard locale={props.locale} />
+  return <ResultCard result={result} locale={props.locale} sessionId={props.sessionId} openFile={props.openFile} />
 }
 
 /** Suppress the folded duplicate on modern hosts; render every image on legacy hosts. */
@@ -59,15 +60,26 @@ export function GeneratedImagesCard(props: ImageCardProps) {
     return <div>{content.filter(item => item.type === 'text').map((item, index) => <p key={index}>{item.text}</p>)}</div>
   }
   return <div className="dsh-ig-promoted-results">
-    {results.map((result, index) => <ImageResultCard key={`${result.attachment.attachmentId}:${index}`} result={result} locale={props.locale} sessionId={props.sessionId} openFile={props.openFile} />)}
+    {results.map((result, index) => <ResultCard key={`${resultIdentity(result)}:${index}`} result={result} locale={props.locale} sessionId={props.sessionId} openFile={props.openFile} />)}
   </div>
+}
+
+/** Route one result to its card: vector markup has no attachment to render. */
+function ResultCard({ result, locale, sessionId, openFile }: {
+  result: ImageResultPresentation
+  locale?: LocaleService | undefined
+  sessionId?: string | undefined
+  openFile?: ((path: string) => void) | undefined
+}) {
+  if (!isRasterResult(result)) return <SvgResultCard result={result} locale={locale} openFile={openFile} />
+  return <ImageResultCard result={result} locale={locale} sessionId={sessionId} openFile={openFile} />
 }
 
 /** Render modern image artifacts as final conversation output instead of Tool process content. */
 export function PromotedImageResultNode(props: ImageResultNodeProps) {
   return <div className="dsh-ig-promoted-results">
     {props.node.data.results.map((result, index) =>
-      <ImageResultCard key={`${result.attachment.attachmentId}:${index}`} result={result} locale={props.locale} sessionId={props.sessionId} openFile={props.openFile} />)}
+      <ResultCard key={`${resultIdentity(result)}:${index}`} result={result} locale={props.locale} sessionId={props.sessionId} openFile={props.openFile} />)}
   </div>
 }
 
@@ -82,7 +94,7 @@ function ImageResultCard({
   sessionId,
   openFile,
 }: {
-  result?: ImageResultPresentation | undefined
+  result?: RasterImageResult | undefined
   locale?: LocaleService | undefined
   sessionId?: string | undefined
   openFile?: ((path: string) => void) | undefined
@@ -92,6 +104,8 @@ function ImageResultCard({
   const [revisionChain, setRevisionChain] = useState<ConversationImageRevisionChain>(() =>
     loadConversationImageRevisionChain(String(originId ?? ''))
   )
+  const originRef = useRef(originId)
+  originRef.current = originId
   const selectedRevision = revisionChain.revisions[revisionChain.currentIndex - 1]
   const activeAttachment = selectedRevision?.attachment ?? attachment
   // The animation follows the version on display: a still revision of a GIF
@@ -112,7 +126,12 @@ function ImageResultCard({
   const [url, setUrl] = useState<string>()
   const [blob, setBlob] = useState<Blob>()
   const [error, setError] = useState<string>()
-  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewOpen, setPreviewOpenState] = useState(false)
+  const previewOpenRef = useRef(false)
+  const setPreviewOpen = (open: boolean) => {
+    previewOpenRef.current = open
+    setPreviewOpenState(open)
+  }
   const [toast, setToast] = useState<string>()
   const [regenerateOpen, setRegenerateOpen] = useState(false)
   const [regeneratePrompt, setRegeneratePrompt] = useState('')
@@ -135,7 +154,7 @@ function ImageResultCard({
     return text
   }
 
-  const baseGalleryRecord = (presentation: ImageResultPresentation): GalleryRecord => ({
+  const baseGalleryRecord = (presentation: RasterImageResult): GalleryRecord => ({
     id: imageVersionKey(String(presentation.attachment.attachmentId), presentation.original),
     attachment: presentation.attachment,
     prompt: presentation.prompt,
@@ -189,14 +208,23 @@ function ImageResultCard({
     versionKey: activeAttachment === undefined ? undefined : imageVersionKey(String(activeAttachment.attachmentId), activeOriginal),
     busy: { running: isRegenerating, setRunning: setIsRegenerating, controller: regenerateControllerRef },
     addRevision: async revision => {
-      const savedOk = await persistGalleryRecord(revisionGalleryRecord(revision))
-      setRevisionChain(appendConversationImageRevision(String(originId), revision))
+      // The new version's picture is fetched (and cached) alongside, so a preview still open switches straight to it rather than showing the old one while it loads.
+      const [savedOk] = await Promise.all([
+        persistGalleryRecord(revisionGalleryRecord(revision)),
+        waitAtMost(fetchAttachmentBlob(revision.attachment).catch(() => undefined), GIF_EDIT_PREFETCH_WAIT_MS),
+      ])
+      const chain = appendConversationImageRevision(String(originId), revision)
+      // Filed under the image it was made from; a card handed another image meanwhile keeps that image's versions.
+      if (originRef.current === originId) setRevisionChain(chain)
       return savedOk
     },
+    isPreviewOpen: () => originRef.current === originId && previewOpenRef.current,
     onSent: message => {
+      // Said of the image the edit was made on; a card handed another image meanwhile has nothing to report.
+      if (originRef.current !== originId) return
       setPreviewOpen(false)
       setToast(message)
-      setTimeout(() => { setToast(undefined) }, 3500)
+      setTimeout(() => { setToast(undefined) }, GIF_EDIT_SENT_TOAST_MS)
     },
     onFallback: (prompt, hint) => {
       setPreviewOpen(false)
@@ -249,6 +277,9 @@ function ImageResultCard({
     window.addEventListener('keydown', onKeyDown)
     return () => { window.removeEventListener('keydown', onKeyDown) }
   }, [previewOpen])
+
+  // Keep the completion attached to the preview and the original image it came back to.
+  useEffect(() => { edit.dismissDone() }, [previewOpen, originId])
 
   const currentUrlRef = useRef<string | undefined>()
 
@@ -442,9 +473,10 @@ function ImageResultCard({
         <div className="dsh-ig-regenerate-overlay">
           <div className="dsh-ig-regenerate-spinner" />
           <span className="dsh-ig-regenerate-overlay-text">{t('regenerating')}</span>
-          <button type="button" className="dsh-ig-regenerate-overlay-cancel" onClick={cancelRegenerate}>
+          {/* Once an edit's reply is in it is filed whatever happens, as in the preview's overlay: a cancel would only free the card while it is still being filed. */}
+          {edit.finishing ? null : <button type="button" className="dsh-ig-regenerate-overlay-cancel" onClick={cancelRegenerate}>
             {t('cancel')}
-          </button>
+          </button>}
         </div>
       ) : null}
       <div className={gifPopupOpen || toast !== undefined ? 'dsh-ig-toolbar is-pinned' : 'dsh-ig-toolbar'}>
@@ -480,6 +512,7 @@ function ImageResultCard({
           alt={activeAttachment?.name ?? 'Generated image preview'}
         />
       </div>
+      <GifEditDoneDock edit={edit} onFinish={() => { setPreviewOpen(false) }} />
     </div> : null}
     {regenerateOpen && activeResult !== undefined ? <div className="dsh-ig-regenerate-backdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget && !isRegenerating) setRegenerateOpen(false)
@@ -515,15 +548,93 @@ function ImageResultCard({
 }
 
 
+/**
+ * Card for a vector result. DSH attachments store raster formats only, so the
+ * markup the model received is rendered here as a data URL: the picture shows
+ * in the conversation exactly like a bitmap card, with vector-only actions
+ * (copy markup, download .svg).
+ */
+function SvgResultCard({ result, locale, openFile }: {
+  result: ImageResultPresentation
+  locale?: LocaleService | undefined
+  openFile?: ((path: string) => void) | undefined
+}) {
+  const lang = usePluginLanguage(locale)
+  const t = (keyName: DictKey): string => DICT[lang][keyName] || DICT.zh[keyName] || keyName
+  const markup = result.svg ?? ''
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [toast, setToast] = useState<string>()
+  const savedTo = result.savedTo
+  // A percent-encoded data URL avoids base64 limits for large documents and
+  // keeps the markup readable in devtools. <img> never runs scripts.
+  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
+  const copyMarkup = () => {
+    const flash = (message: string) => {
+      setToast(message)
+      setTimeout(() => { setToast(undefined) }, 2000)
+    }
+    // navigator.clipboard is missing outside a secure context.
+    if (typeof navigator.clipboard?.writeText !== 'function') { flash(t('copyFailed')); return }
+    void navigator.clipboard.writeText(markup).then(() => { flash(t('svgCopy')) }).catch(() => { flash(t('copyFailed')) })
+  }
+  const download = () => {
+    const name = savedTo?.split(/[\\/]/).pop() ?? 'image.svg'
+    const blobUrl = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml' }))
+    const anchor = document.createElement('a')
+    anchor.href = blobUrl
+    anchor.download = name.endsWith('.svg') ? name : `${name}.svg`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    setTimeout(() => { URL.revokeObjectURL(blobUrl) }, 10_000)
+  }
+  return <section className="dsh-ig-result" aria-label={t('generatedTitle')}>
+    <div className="dsh-ig-result-title">
+      {t('generatedTitle')}
+      <span className="dsh-ig-tag dsh-ig-svg-badge" title={t('svgPreviewHint')}>{t('svgBadge')}</span>
+    </div>
+    {savedTo !== undefined
+      ? <div className="dsh-ig-savedto">{t('savedToPath')}: {openFile === undefined ? savedTo : <button type="button" className="dsh-ig-savedto-open" title={savedTo} onClick={() => { openFile(savedTo) }}>{savedTo}</button>}</div>
+      : null}
+    <div className="dsh-ig-container">
+      <img
+        className="dsh-ig-image"
+        src={url}
+        alt={result.prompt || 'Generated SVG'}
+        onClick={() => { setPreviewOpen(true) }}
+      />
+      <div className={toast !== undefined ? 'dsh-ig-toolbar is-pinned' : 'dsh-ig-toolbar'}>
+        <button type="button" className="dsh-ig-tool-btn" title={t('svgCopy')} onClick={copyMarkup}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>
+        </button>
+        <button type="button" className="dsh-ig-tool-btn" title={t('svgDownload')} onClick={download}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        {openFile !== undefined && savedTo !== undefined
+          ? <button type="button" className="dsh-ig-tool-btn" title={t('openNewTab')} onClick={() => { openFile(savedTo) }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </button>
+          : null}
+        {toast ? <div className="dsh-ig-toast">{toast}</div> : null}
+      </div>
+    </div>
+    {previewOpen ? <div className="dsh-ig-lightbox-backdrop" onClick={() => { setPreviewOpen(false) }}>
+      <div className="dsh-ig-lightbox-img-wrap" onClick={(event) => { event.stopPropagation() }}>
+        <img className="dsh-ig-lightbox-img" src={url} alt={result.prompt || 'Generated SVG preview'} />
+      </div>
+    </div> : null}
+  </section>
+}
+
 function imageResultFromBlock(block: ToolCallBlock): ImageResultPresentation | undefined {
   const attachment = imageRef(block)
-  if (attachment === undefined) return undefined
   const blockValue = block as unknown as {
     meta?: Record<string, unknown>
     resultView?: { meta?: Record<string, unknown> }
     call?: { args?: { prompt?: string; source_attachment_id?: string; source_attachment_ids?: string[] } }
   }
   const meta = blockValue.meta ?? blockValue.resultView?.meta
+  if (attachment === undefined) return imageResultsFromMeta(meta)[0]
   const sourceIds = Array.isArray(blockValue.call?.args?.source_attachment_ids)
     ? blockValue.call?.args?.source_attachment_ids
     : typeof blockValue.call?.args?.source_attachment_id === 'string'

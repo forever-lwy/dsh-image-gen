@@ -1,4 +1,3 @@
-/** Multi-provider image-generation Bundle for DeepSeek Harness. */
 import type { Context } from '@deepseek-ai/cordis';
 import { Config } from './config.js';
 export { Config } from './config.js';

@@ -12,6 +12,10 @@ export type AspectRatio = typeof ASPECT_RATIOS[number];
 export type ImageSize = typeof IMAGE_SIZES[number];
 /** Bundle configuration from the profile patch and the Web settings page. */
 export interface Config {
+    /** Opt in to public HTTPS:443 result downloads with pinned DNS and no redirects. */
+    strictImageDownloads?: boolean;
+    /** Refuse web requests when the host connection admission service is absent. */
+    requireHostAdmission?: boolean;
     provider?: ImageProvider;
     cloudTimeoutMs?: number;
     googleModel?: string;

@@ -3,6 +3,14 @@ import type { GifT } from './gif-i18n.js';
 import { type GifPlayer, type GifPlayerSnapshot } from './gif-player.js';
 import { type GifComment, type GifSheetPlan } from './gif-sheet.js';
 export type GifEditAvailability = 'ready' | 'frame-count' | 'unsupported' | 'decoding' | 'unloaded';
+/** A send in progress: the sheet and the model are being prepared, the model is redrawing, or the reply is in and the progress bar fills. */
+export type GifEditPhase = 'preparing' | 'redrawing' | 'finishing';
+/** An edit that came back while its editor was on screen. */
+export interface GifEditDone {
+    message: string;
+    /** The channel answered with a still, which has no frames to leave notes on. */
+    still: boolean;
+}
 /**
  * Whether the animation can be edited, and why not: only OpenAI-shaped
  * providers take the edit request, the frames must be decoded (the sheet is
@@ -58,7 +66,9 @@ export interface GifCommentBarProps {
     current: number;
     total: number;
     count: number;
-    sending: boolean;
+    phase: GifEditPhase | undefined;
+    /** Whole seconds since the send. */
+    seconds: number;
     /** The answer to the request just sent. */
     error?: string | undefined;
     /** What the error most likely means, when it came from the channel. */
@@ -66,12 +76,42 @@ export interface GifCommentBarProps {
     t: GifT;
     onView(view: 'gif' | 'sheet'): void;
     onClear(): void;
-    onCancel(): void;
     onSend(): void;
     onFallback(): void;
 }
-/** The edit bar under the player: what to do, the count, the view switch and the actions. */
-export declare function GifCommentBar({ view, current, total, count, sending, error, errorHint, t, onView, onClear, onCancel, onSend, onFallback }: GifCommentBarProps): import("react").JSX.Element;
+/**
+ * The edit bar under the player: what to do, the count, the view switch and
+ * the actions. While a send runs it says what is happening and counts the
+ * seconds. It has no cancel of its own: the player bar's switch leaves
+ * editing, and the overlay on the picture stops a send.
+ */
+export declare function GifCommentBar({ view, current, total, count, phase, seconds, error, errorHint, t, onView, onClear, onSend, onFallback }: GifCommentBarProps): import("react").JSX.Element;
+/**
+ * Over the picture while a send runs, until its new version is filed; its
+ * cancel is the one way to stop a send in the preview (the card has its own
+ * once the preview is closed). It names the step but never a frame
+ * (a note may ask to change every frame after it) and shows no number: the
+ * redraw reports no progress, so the bar is an estimate that only the reply
+ * fills.
+ */
+export declare function GifEditOverlay({ phase, progress, t, onCancel }: {
+    phase: GifEditPhase;
+    progress: number;
+    t: GifT;
+    onCancel(): void;
+}): import("react").JSX.Element;
+/**
+ * Where the edit bar was, once an edit came back while it was watched: what
+ * came of it, going on from the new version, or closing the preview. A new
+ * animation takes notes once its frames are decoded; a still takes none.
+ */
+export declare function GifEditDoneBar({ done, availability, t, onContinue, onFinish }: {
+    done: GifEditDone;
+    availability: GifEditAvailability | undefined;
+    t: GifT;
+    onContinue?: (() => void) | undefined;
+    onFinish(): void;
+}): import("react").JSX.Element;
 export interface GifCommentLayerProps {
     player: GifPlayer;
     editing: boolean;

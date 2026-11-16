@@ -14,6 +14,7 @@ export declare function editSeedreamImage(input: {
     }>;
     size?: string;
     maxBytes: number;
+    strictImageDownloads?: boolean;
     signal: AbortSignal;
     /**
      * Ark output controls. The edit path is the only one Ark lets request a

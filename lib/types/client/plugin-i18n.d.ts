@@ -171,6 +171,10 @@ export declare const DICT: {
         readonly copyImg: "复制图片";
         readonly download: "下载图片";
         readonly openNewTab: "新标签页打开";
+        readonly svgBadge: "SVG 矢量";
+        readonly svgCopy: "复制 SVG 源码";
+        readonly svgDownload: "下载 .svg";
+        readonly svgPreviewHint: "矢量图，可无损放大";
         readonly copiedImage: "已复制图片";
         readonly copyFailed: "复制失败";
         readonly regenerate: "重新生成";
@@ -357,6 +361,10 @@ export declare const DICT: {
         readonly copyImg: "Copy Image";
         readonly download: "Download Image";
         readonly openNewTab: "Open in new tab";
+        readonly svgBadge: "SVG vector";
+        readonly svgCopy: "Copy SVG markup";
+        readonly svgDownload: "Download .svg";
+        readonly svgPreviewHint: "Vector image; scales without loss";
         readonly copiedImage: "Image copied";
         readonly copyFailed: "Copy failed";
         readonly regenerate: "Regenerate";

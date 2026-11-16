@@ -8,6 +8,7 @@ export interface DashScopeImageOptions {
     size?: string;
     watermark?: boolean;
     maxBytes: number;
+    strictImageDownloads?: boolean;
     signal?: AbortSignal;
 }
 export interface DashScopeEditOptions extends DashScopeImageOptions {

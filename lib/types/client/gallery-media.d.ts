@@ -3,7 +3,7 @@ export declare function shouldPrefetchOriginal(original: GalleryItem['original']
 /** Stable per-browser-profile identity; the vault registry unions all profiles. */
 export declare function vaultProfileId(): string | undefined;
 /** Sync this profile's references; the server never deletes originals here. */
-export declare function syncVaultRefs(keys: string[]): Promise<void>;
+export declare function syncVaultRefs(keys: string[], signal?: AbortSignal): Promise<void>;
 /** Manual gallery deletion: remove originals only after the server checks every profile. */
 export declare function deleteVaultOriginals(deleteKeys: string[], remainingKeys: string[]): void;
 export type GalleryRecord = Parameters<typeof saveGalleryItem>[0];

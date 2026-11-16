@@ -1,6 +1,12 @@
 import type { StudioWorkspaceInfo } from './shared.js';
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
 /**
+ * Media types that can be written to the workspace. SVG is a vector document
+ * the attachment layer does not store, but the generated file is still an
+ * image artifact worth saving next to the rasters.
+ */
+export type SavedMediaType = ImageAttachmentRef['mediaType'] | 'image/svg+xml';
+/**
  * Build the deterministic file name for a generated image:
  * `image-<digest-prefix>.<ext>`. The digest prefix comes from the
  * content-addressed attachment id, so the same image bytes always map to the
@@ -10,7 +16,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
  * @param mediaType - verified image media type.
  * @returns the file name (no directory).
  */
-export declare function workspaceImageName(attachmentId: string, mediaType: ImageAttachmentRef['mediaType']): string;
+export declare function workspaceImageName(attachmentId: string, mediaType: SavedMediaType): string;
 /**
  * Resolve the configured image folder inside the session workspace. The
  * folder may nest, but must stay inside the workspace: absolute paths and
@@ -47,7 +53,7 @@ export declare function saveImageToWorkspace(options: {
     workspaceRoot: string;
     folder?: string | undefined;
     attachmentId: string;
-    mediaType: ImageAttachmentRef['mediaType'];
+    mediaType: SavedMediaType;
     data: Uint8Array;
     signal?: AbortSignal;
 }): Promise<string>;

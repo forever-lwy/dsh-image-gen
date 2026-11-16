@@ -319,6 +319,7 @@ export interface StudioConfigResponse {
     providers: StudioProviderProfile[];
     activeProvider: StudioProvider;
     activeChannel?: string;
+    modelDiscoveryPending?: boolean;
     workspaceRoot?: string | undefined;
     workspaces?: StudioWorkspaceInfo[] | undefined;
 }

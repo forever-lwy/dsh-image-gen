@@ -94,6 +94,15 @@ pnpm dsh plugin --profile web add dsh-image-gen@latest
 
 ## 快速开始
 
+### 加固下载（可选）
+
+两条可选设置加固离开本机的网络路径，默认全部关闭：
+
+- `strictImageDownloads`：结果 URL 必须是公网 HTTPS 443。DNS 解析结果会校验并固定用于本次请求，不跟随 provider 结果中的重定向，响应遵守图片字节上限。
+- `requireHostAdmission`：宿主 connection admission 服务缺失或异常时，插件 Web 路由一律 503 拒绝，而不是裸奔。
+
+默认关闭是因为 TUN 代理或自定义企业解析器可能故意返回内网地址；开启任一设置即假定你的出口是直连。
+
 ### 1. 安装插件
 
 环境要求：DeepSeek Harness 稳定版本，Node.js `^22.19.0` 或 `>= 24.0.0`。
@@ -246,6 +255,13 @@ pnpm dsh plugin --profile web add ./dsh-image-gen
 - 生成结果是 GIF 时，对话卡片直接播放动画：左下角调倍速（0.2×–2×），工具栏的下载菜单可按当前倍速或原速下载 GIF、或下载当前帧（PNG）；点开大图有播放键、逐帧缩略图时间轴（悬停预览、点击停在这一帧）和倍速。图库里的 GIF 带角标、悬停即播放，大图同样可播放与下载。GIF 文件可直接拖出，重新生成仍得到 GIF（剪贴板只支持静态图，复制得到的是单帧）。
 - GIF 卡片右下角「编辑」（或大图播放条的「编辑帧」）可按帧写修改意见：在画面上点位置写评论，评论只显示在它所在的那一帧，也可切到「全部帧」一次看全；一次发送即按评论重绘整段，新结果作为新版本保留并会动（仅 OpenAI 与兼容渠道，且中转需支持图生图；不支持时可一键改为描述后重新生成）。
 - 支持渠道：OpenAI 官方与 OpenAI 兼容中转（需模型与中转支持 GIF）。ChatGPT 订阅使用的 Codex 图片接口目前上游未开放 GIF，暂不支持。
+
+#### 🖼️ SVG 矢量输出
+
+生图时也可以要求矢量结果：`generate_image` 传 `output_format: "svg"`（仅 OpenAI 官方与兼容中转的**文生图**；图生图接口不支持 SVG）。
+
+- 结果会进入对话图卡：卡片直接显示矢量图（点开可放大，无损），工具栏可复制 SVG 源码、下载 `.svg`、在侧栏打开保存的文件。DSH 附件层只保存 png/jpeg/webp/gif，所以卡片是用工具结果里的 SVG 源码渲染的，图库与版本历史仍只收录位图。
+- SVG 没有像素尺寸，`size` / `aspect_ratio` / `image_size` 不会发送，结果里会给出一条说明；`frame_count` / `frame_duration_ms` 只属于 GIF，与 SVG 一起传会直接报错。
 
 <br />
 

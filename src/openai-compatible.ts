@@ -1,5 +1,6 @@
 /** OpenAI Images API and compatible response adapter. */
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import { downloadPublicImage } from './public-image-download.js'
 import { guardedFetch, readResponseBody } from './fetch-diagnostics.js'
 import { redactSecrets } from './redact.js'
 import { detectImageMediaType } from './reference-image.js'
@@ -7,9 +8,41 @@ import { arkOutputBody, type ArkOutputOptions } from './shared.js'
 
 const ERROR_LIMIT = 4096
 
+/**
+ * What an images request can return: the raster types the attachment layer
+ * stores, plus the SVG document `output_format: 'svg'` produces.
+ */
+export type GeneratedMediaType = ImageMediaType | 'image/svg+xml'
+
 export interface GeneratedCompatibleImage {
   data: Uint8Array
-  mediaType: ImageMediaType
+  mediaType: GeneratedMediaType
+}
+
+/**
+ * The workbench stores results through the raster attachment API only, so a
+ * studio call never asks for SVG; guard the widened result type anyway.
+ */
+export function rasterOnly<T extends { data: Uint8Array; mediaType: GeneratedMediaType }>(image: T): { data: Uint8Array; mediaType: ImageMediaType } {
+  if (image.mediaType === 'image/svg+xml') throw new Error('SVG 输出仅在对话工具中支持；工作台请使用位图格式')
+  return { data: image.data, mediaType: image.mediaType }
+}
+
+/**
+ * True when the bytes are an SVG document rather than a raster image. The
+ * relay returns SVG as `b64_json` of the markup (or a URL to a .svg file), so
+ * the payload is UTF-8 text whose root element, after any XML declaration,
+ * processing instructions, comments, and DOCTYPE, is `<svg>`; every raster
+ * format starts with a binary magic number instead. An HTML page that merely
+ * contains an inline `<svg>` is not an SVG document. Only the first 64 KB are
+ * decoded.
+ */
+export function isSvgDocument(data: Uint8Array): boolean {
+  const decoder = new TextDecoder()
+  if (!decoder.decode(data.subarray(0, 64)).replace(/^\uFEFF/, '').trimStart().startsWith('<')) return false
+  // The root element sits right after a short preamble, so 64 KB is ample.
+  const text = decoder.decode(data.subarray(0, 64 * 1024)).replace(/^\uFEFF/, '')
+  return /^\s*(?:(?:<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>[]*(?:\[[\s\S]*?\])?\s*>)\s*)*<svg[\s/>]/.test(text)
 }
 
 export interface CompatibleReferenceImage {
@@ -34,6 +67,7 @@ export async function generateOpenAICompatibleImage(input: {
   quality?: string
   /** Extra JSON fields merged last into the generations body (xAI aspect_ratio/resolution). */
   extraBody?: Readonly<Record<string, unknown>>
+  strictImageDownloads?: boolean
   maxBytes: number
   signal: AbortSignal
   /** Ark-only output controls; ignored by every other provider. */
@@ -54,7 +88,7 @@ export async function generateOpenAICompatibleImage(input: {
       ...(input.extraBody ?? {}),
     }),
   }), input.apiKey)
-  return parseImageResponse(response, input.provider, input)
+  return parseImageResponse(response, input.provider, { ...input, acceptSvg: input.extraBody?.output_format === 'svg' })
 }
 
 /** How the edits endpoint expects its request body (#41). */
@@ -67,6 +101,7 @@ export async function editOpenAICompatibleImage(input: {
   prompt: string
   sourceImages: CompatibleReferenceImage[]
   size?: string
+  strictImageDownloads?: boolean
   maxBytes: number
   signal: AbortSignal
   /**
@@ -257,10 +292,19 @@ function rejectsResponseFormat(text: string): boolean {
   return /(?:response[_ -]?format|b64_json)/i.test(message) && /(?:unsupported|not\s+(?:support|allowed|permitted|accepted|implemented)|unknown|unrecognized|unexpected|invalid|extra\s+(?:field|input)|不支持|不允许|未知|无效|未识别)/i.test(message)
 }
 
+interface ImageResponseOptions {
+  baseURL: string
+  maxBytes: number
+  signal: AbortSignal
+  apiKey?: string
+  strictImageDownloads?: boolean
+  acceptSvg?: boolean
+}
+
 async function parseImageResponse(
   response: Response,
   provider: string,
-  input: { baseURL: string; maxBytes: number; signal: AbortSignal; apiKey?: string },
+  input: ImageResponseOptions,
 ): Promise<GeneratedCompatibleImage> {
   const text = await readBoundedText(response, Math.ceil(input.maxBytes * 1.4) + ERROR_LIMIT)
   if (!response.ok) throw new Error(`${provider} image request failed (${response.status}): ${redactSecrets(text, input.apiKey).slice(0, ERROR_LIMIT)}`)
@@ -272,6 +316,7 @@ async function parseImageResponse(
     // Relays may omit mime_type while returning non-PNG bytes (Ark jpeg), so
     // sniff before trusting the header to avoid IMAGE_TYPE_MISMATCH (#61).
     const data = decodeBase64(image.b64_json, provider)
+    if (isSvgDocument(data)) return { data, mediaType: 'image/svg+xml' }
     return { data, mediaType: detectImageMediaType(data) ?? imageMediaType(image.mime_type) ?? 'image/png' }
   }
   return downloadImage(image.url, provider, input)
@@ -307,13 +352,14 @@ function firstImage(value: unknown): { b64_json?: string; url?: string; mime_typ
 async function downloadImage(
   url: string | undefined,
   provider: string,
-  input: { baseURL: string; maxBytes: number; signal: AbortSignal; apiKey?: string },
+  input: ImageResponseOptions,
 ): Promise<GeneratedCompatibleImage> {
   if (url === undefined) throw new Error(`${provider} image request returned no image data`)
   if (url.startsWith('data:')) {
     const parsed = parseDataUrl(url)
     if (parsed === undefined) throw new Error(`${provider} image request returned invalid data URL`)
     const data = decodeBase64(parsed.base64, provider)
+    if (isSvgDocument(data)) return { data, mediaType: 'image/svg+xml' }
     return { data, mediaType: detectImageMediaType(data) ?? imageMediaType(parsed.mediaType) ?? 'image/png' }
   }
   // Relative URLs are legal for self-hosted gateways (SGLang returns
@@ -335,7 +381,9 @@ async function downloadImage(
   }
   if (response === undefined) throw failure instanceof Error ? failure : new Error(`${provider} image download failed`)
   const data = await readBoundedBytes(response, input.maxBytes)
-  const mediaType = detectImageMediaType(data) ?? imageMediaType(response.headers.get('content-type'))
+  // SVG arrives as text from the relay's object store, so the declared
+  // content type is the only hint besides the markup itself.
+  const mediaType = isSvgDocument(data) ? 'image/svg+xml' : detectImageMediaType(data) ?? imageMediaType(response.headers.get('content-type'))
   if (mediaType === undefined) throw new Error(`${provider} image download returned unsupported content type`)
   return { data, mediaType }
 }
@@ -362,9 +410,23 @@ function imageDownloadCandidates(url: string, baseURL: string, provider: string)
 async function requestImageCandidate(
   candidate: string,
   provider: string,
-  input: { baseURL: string; maxBytes: number; signal: AbortSignal; apiKey?: string },
+  input: ImageResponseOptions,
 ): Promise<Response> {
   const sameOrigin = new URL(candidate).origin === new URL(input.baseURL).origin
+  if (input.strictImageDownloads === true) {
+    const options = { maxBytes: input.maxBytes, signal: input.signal, acceptSvg: input.acceptSvg === true }
+    let result
+    try {
+      result = await downloadPublicImage(candidate, {
+        ...options,
+        ...(sameOrigin && input.apiKey !== undefined ? { authorization: 'Bearer ' + input.apiKey } : {}),
+      })
+    } catch (error) {
+      if (!sameOrigin || input.apiKey === undefined) throw error
+      result = await downloadPublicImage(candidate, options)
+    }
+    return new Response(result.data as BodyInit, { headers: result.contentType === undefined ? {} : { 'content-type': result.contentType } })
+  }
   let response = await guardedFetch(provider + ' image download', input.signal, () => fetch(candidate, {
     redirect: 'follow', signal: input.signal,
     ...(input.apiKey === undefined || !sameOrigin ? {} : { headers: { authorization: 'Bearer ' + input.apiKey } }),

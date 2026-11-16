@@ -1,10 +1,36 @@
 /** OpenAI Images API and compatible response adapter. */
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment';
 import { type ArkOutputOptions } from './shared.js';
+/**
+ * What an images request can return: the raster types the attachment layer
+ * stores, plus the SVG document `output_format: 'svg'` produces.
+ */
+export type GeneratedMediaType = ImageMediaType | 'image/svg+xml';
 export interface GeneratedCompatibleImage {
     data: Uint8Array;
-    mediaType: ImageMediaType;
+    mediaType: GeneratedMediaType;
 }
+/**
+ * The workbench stores results through the raster attachment API only, so a
+ * studio call never asks for SVG; guard the widened result type anyway.
+ */
+export declare function rasterOnly<T extends {
+    data: Uint8Array;
+    mediaType: GeneratedMediaType;
+}>(image: T): {
+    data: Uint8Array;
+    mediaType: ImageMediaType;
+};
+/**
+ * True when the bytes are an SVG document rather than a raster image. The
+ * relay returns SVG as `b64_json` of the markup (or a URL to a .svg file), so
+ * the payload is UTF-8 text whose root element, after any XML declaration,
+ * processing instructions, comments, and DOCTYPE, is `<svg>`; every raster
+ * format starts with a binary magic number instead. An HTML page that merely
+ * contains an inline `<svg>` is not an SVG document. Only the first 64 KB are
+ * decoded.
+ */
+export declare function isSvgDocument(data: Uint8Array): boolean;
 export interface CompatibleReferenceImage {
     data: Uint8Array;
     mediaType: ImageMediaType;
@@ -26,6 +52,7 @@ export declare function generateOpenAICompatibleImage(input: {
     quality?: string;
     /** Extra JSON fields merged last into the generations body (xAI aspect_ratio/resolution). */
     extraBody?: Readonly<Record<string, unknown>>;
+    strictImageDownloads?: boolean;
     maxBytes: number;
     signal: AbortSignal;
     /** Ark-only output controls; ignored by every other provider. */
@@ -40,6 +67,7 @@ export declare function editOpenAICompatibleImage(input: {
     prompt: string;
     sourceImages: CompatibleReferenceImage[];
     size?: string;
+    strictImageDownloads?: boolean;
     maxBytes: number;
     signal: AbortSignal;
     /**

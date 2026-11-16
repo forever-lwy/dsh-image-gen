@@ -26,6 +26,38 @@ export declare function openAICompatTable(config: Config): Array<{
  * @param quality - selected resolution tier.
  */
 export declare function openAIRequestSize(config: Config, ratio: string, quality: string): string;
+/**
+ * Decide the pixel size a chat-tool image request should carry.
+ *
+ * Lives here rather than in `index.ts` so the precedence rules can be tested
+ * without importing the whole plugin entry (which pulls in every provider
+ * adapter and drags unrelated suites past their timeouts). `index.ts` calls it.
+ *
+ * Order matters in two places:
+ *
+ * 1. **Format guards run before the ratio lookup.** A GIF without an explicit
+ *    size and an SVG both send no pixel size at all. `openAIRequestSize` throws
+ *    when a ratio's lowest configured tier is above the requested budget, so
+ *    resolving early would fail a request that used to reach the provider fine.
+ * 2. **The budget is the table's own baseline, not `'1K'`.** A ratio configured
+ *    with only a 2K tier would throw under a fixed 1K budget; an empty tier
+ *    label is unparseable, so `openAIRequestSize` picks the ratio's lowest
+ *    configured tier instead, the cheapest size the relay lists for it.
+ *
+ * Precedence: explicit `size` → relay's configured table → orientation
+ * fallback → profile default.
+ */
+export declare function chatToolSize(input: {
+    provider: string;
+    config: Config;
+    fallbackSize: string;
+    args: {
+        size?: string;
+        aspect_ratio?: string;
+    };
+    gifRequested: boolean;
+    svgRequested: boolean;
+}): string | undefined;
 /** Return only browser-safe capability data. */
 export declare function describeStudio(ctx: Context, config: Config, subscriptions?: SubscriptionManager | undefined): Promise<StudioConfigResponse>;
 /** A generation on an OpenAI-compatible channel whose extras select GIF is a GIF request even when it carries no `output`. */
