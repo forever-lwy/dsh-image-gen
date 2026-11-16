@@ -85,6 +85,15 @@ No parameters to learn, no pages to switch. Just say it in a DSH chat:
 
 ## Quick Start
 
+### Hardened downloads (opt-in)
+
+Two optional settings harden the paths that leave this machine, both off by default:
+
+- `strictImageDownloads`: result URLs must be public HTTPS on port 443. DNS answers are validated and pinned for the request, redirects from provider results are never followed, and responses respect the image byte limit.
+- `requireHostAdmission`: the plugin's web routes refuse requests with 503 whenever the host's connection admission service is absent or fails, instead of serving them unguarded.
+
+They stay off by default because a TUN proxy or a custom corporate resolver can intentionally answer with private-range addresses; enabling either setting assumes your egress is direct.
+
 ### 1. Install the plugin
 
 Requirements: DeepSeek Harness stable version, Node.js `^22.19.0` or `>= 24.0.0`.
@@ -237,6 +246,13 @@ With a GIF-capable model such as GPT Image 2.6, just ask for a "GIF" or "animati
 - When a result is a GIF, the chat card plays it: set the speed (0.2×–2×) from its corner, and the toolbar's download menu saves the GIF at the current or the original speed, or the frame on screen as PNG. The enlarged view adds a play button and a frame timeline (hover to preview a frame, click to stop on it) next to the speed. In the Gallery, GIF tiles carry a badge and play on hover, and the enlarged view plays and downloads them the same way. The GIF file can be dragged straight out, and regenerating keeps it a GIF (the clipboard only takes still images, so copying gives a single frame).
 - A GIF card's **Edit** chip (or **Edit frames** in the enlarged view) takes notes on frames: click a spot on the picture to leave a note, which shows only on its own frame, or switch to **All frames** to see them together; send once to redraw the whole animation from your notes, kept as a new version that plays (OpenAI and compatible channels only, and the relay must support image editing; otherwise one click turns the notes into a plain regeneration).
 - Supported channels: official OpenAI and OpenAI-compatible relays (the model and relay must support GIF). The Codex images endpoint behind the ChatGPT subscription does not offer GIF output upstream yet.
+
+#### 🖼️ SVG vector output
+
+Generation can also return a vector document: pass `output_format: "svg"` to `generate_image` (official OpenAI and compatible relays, **text-to-image only** — the edits endpoint does not produce SVG).
+
+- The result does appear as a chat card: the card draws the vector image itself (open it to zoom without loss), and its toolbar copies the markup, downloads the `.svg`, or opens the saved file in the sidebar. DSH attachments store png/jpeg/webp/gif only, so the card renders the markup from the tool result; the Gallery and version history still keep bitmaps only.
+- A vector document has no pixel grid, so `size` / `aspect_ratio` / `image_size` are not sent and the result says so; `frame_count` / `frame_duration_ms` belong to GIF and are rejected alongside SVG.
 
 <br />
 

@@ -14,7 +14,7 @@ import {
 import { editDashScopeImage, generateDashScopeImage } from './dashscope.js'
 import { requireApiKey, resolveApiKey } from './credentials.js'
 import { editGoogleImage, generateGoogleImage } from './google.js'
-import { editOpenAICompatibleImage, generateOpenAICompatibleImage } from './openai-compatible.js'
+import { editOpenAICompatibleImage, generateOpenAICompatibleImage, rasterOnly } from './openai-compatible.js'
 import { editSeedreamImage } from './seedream.js'
 import { generateSubscriptionImage, vendorOf, type SubscriptionManager } from './subscription.js'
 import {
@@ -43,6 +43,7 @@ import { CLOUD_CAPABILITIES, cloudCapability, RATIO_LABELS, SUBSCRIPTION_CAPABIL
 import { compatGenerationExtraBody, compatQualityOptions, compatRequestQuality, gifRequestFields, officialQualityOptions, officialSizeTable, validateGifFrameSize, validateOfficialSize, PROVIDER_DEFAULT_QUALITY } from './openai-output.js'
 import { keepGifOriginal } from './vault-registry.js'
 import { vaultConfigOf } from './vault-store.js'
+import { refreshProfileModels, widenProfileModels, withCachedChannelModels } from './channel-model-discovery.js'
 import { compatEditExtraBody, selectedWatermark, watermarkProfile } from './watermark.js'
 
 const LEGACY_OPENAI_TABLE: Record<string, Record<string, string>> = {
@@ -103,8 +104,15 @@ function ratioPosition(ratio: string): number {
 export function openAIRequestSize(config: Config, ratio: string, quality: string): string {
   const group = openAICompatTable(config).find(entry => entry.ratio === ratio)
   if (group === undefined) {
-    if (ratio === '3:2') return '1536x1024'
-    if (ratio === '2:3') return '1024x1536'
+    // The built-in table only lists 1:1/3:2/2:3, while the tool schema and the
+    // ratio picker advertise the full ten. An unmapped ratio used to collapse to
+    // 1024x1024 — a 3:4 portrait request silently became a square. Orient the
+    // square instead: the generator honours one dimension per axis, so a
+    // portrait keeps the taller side and a landscape the wider one.
+    const [width, height] = ratio.split(':').map(Number)
+    if (width !== undefined && height !== undefined && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+      return height > width ? '1024x1536' : width > height ? '1536x1024' : '1024x1024'
+    }
     return '1024x1024'
   }
   const requested = tierRank(quality)
@@ -114,6 +122,44 @@ export function openAIRequestSize(config: Config, ratio: string, quality: string
     throw new Error(`该比例不支持 ${quality} 清晰度，请降低清晰度或更换比例`)
   }
   return withinBudget.reduce((best, entry) => (entry.rank > best.rank ? entry : best)).size
+}
+
+/**
+ * Decide the pixel size a chat-tool image request should carry.
+ *
+ * Lives here rather than in `index.ts` so the precedence rules can be tested
+ * without importing the whole plugin entry (which pulls in every provider
+ * adapter and drags unrelated suites past their timeouts). `index.ts` calls it.
+ *
+ * Order matters in two places:
+ *
+ * 1. **Format guards run before the ratio lookup.** A GIF without an explicit
+ *    size and an SVG both send no pixel size at all. `openAIRequestSize` throws
+ *    when a ratio's lowest configured tier is above the requested budget, so
+ *    resolving early would fail a request that used to reach the provider fine.
+ * 2. **The budget is the table's own baseline, not `'1K'`.** A ratio configured
+ *    with only a 2K tier would throw under a fixed 1K budget; an empty tier
+ *    label is unparseable, so `openAIRequestSize` picks the ratio's lowest
+ *    configured tier instead, the cheapest size the relay lists for it.
+ *
+ * Precedence: explicit `size` → relay's configured table → orientation
+ * fallback → profile default.
+ */
+export function chatToolSize(input: {
+  provider: string
+  config: Config
+  fallbackSize: string
+  args: { size?: string; aspect_ratio?: string }
+  gifRequested: boolean
+  svgRequested: boolean
+}): string | undefined {
+  const sizeDiscarded = input.svgRequested || (input.gifRequested && input.args.size === undefined)
+  if (sizeDiscarded) return undefined
+  if (input.args.size !== undefined) return input.args.size
+  const ratioSize = input.provider === 'openai-compat' && input.args.aspect_ratio !== undefined
+    ? openAIRequestSize(input.config, input.args.aspect_ratio, '')
+    : undefined
+  return ratioSize ?? input.fallbackSize
 }
 
 /** The relay table entry the user picked, if a table is configured and lists this ratio; otherwise nothing. */
@@ -165,7 +211,8 @@ export async function describeStudio(
   config: Config,
   subscriptions?: SubscriptionManager | undefined,
 ): Promise<StudioConfigResponse> {
-  const compatChannels = resolveOpenAICompatChannels(config)
+  const effectiveConfig = withCachedChannelModels(config).config
+  const compatChannels = resolveOpenAICompatChannels(effectiveConfig)
   const configuredEntries = await Promise.all([
     ...CLOUD_IMAGE_PROVIDERS.filter(provider => provider !== 'openai-compat').map(async provider => {
       return [provider, await resolveApiKey(ctx, provider) !== undefined] as const
@@ -175,9 +222,20 @@ export async function describeStudio(
     }),
   ])
   const configured = Object.fromEntries(configuredEntries) as Record<string, boolean>
-  const cloudProfiles = CLOUD_IMAGE_PROVIDERS.flatMap(provider => provider === 'openai-compat'
-    ? compatChannels.map(channel => studioProfile(config, provider, configured[`openai-compat:${channel.id}`] === true, channel.id))
-    : [studioProfile(config, provider, configured[provider] === true)])
+  const cloudRows = CLOUD_IMAGE_PROVIDERS.flatMap(provider => provider === 'openai-compat'
+    ? compatChannels.map(channel => studioProfile(effectiveConfig, provider, configured[`openai-compat:${channel.id}`] === true, channel.id))
+    : [studioProfile(effectiveConfig, provider, configured[provider] === true)])
+  // Return cached models right away and tell the workbench when a probe is pending.
+  let modelDiscoveryPending = false
+  const cloudProfiles = cloudRows.map(row => {
+    if (!row.configured) return row
+    const widened = widenProfileModels(row, effectiveConfig)
+    if (widened.refresh) {
+      modelDiscoveryPending = true
+      refreshProfileModels(ctx, effectiveConfig, widened.profile)
+    }
+    return widened.profile
+  })
   // Subscription profiles: configured means "signed in", and the parameter
   // matrix collapses to a single channel-default pair (prompt-only channels).
   const subStatuses = await Promise.all(SUBSCRIPTION_PROVIDERS.map(async provider => {
@@ -196,7 +254,12 @@ export async function describeStudio(
     ? profiles.find(profile => profile.provider === activeProvider && profile.channel === resolveOpenAICompatChannel(config).id)?.channel
       ?? profiles.find(profile => profile.provider === activeProvider)?.channel
     : undefined
-  return { providers: profiles, activeProvider, ...(activeChannel === undefined ? {} : { activeChannel }) }
+  return {
+    providers: profiles,
+    activeProvider,
+    ...(activeChannel === undefined ? {} : { activeChannel }),
+    ...(modelDiscoveryPending ? { modelDiscoveryPending } : {}),
+  }
 }
 
 /** The persisted default provider is usable directly when the workbench can drive it. */
@@ -255,7 +318,7 @@ export async function generateFromStudio(
   }
   const channel = input.provider === 'openai-compat' ? resolveOpenAICompatChannel(config, input.channel) : undefined
   const requestConfig = input.provider === 'openai-compat' ? withOpenAICompatChannel(config, input.channel) : config
-  const profile = studioProfile(requestConfig, input.provider, true, channel?.id)
+  const profile = widenProfileModels(studioProfile(requestConfig, input.provider, true, channel?.id), requestConfig).profile
   const model = withGenerationModel(profile, input).model
   const channelGif = channelSelectsGif(config, input)
   assertAllowed(profile, { ...input, model }, input.output?.format === 'gif' || channelGif)
@@ -324,16 +387,19 @@ export async function generateFromStudio(
           ? compatGenerationExtraBody(requestConfig, input.watermark) : compatEditExtraBody(requestConfig, input.watermark)
         : undefined
       const extraBody = Object.keys(gifFields).length === 0 ? channelExtraBody : { ...channelExtraBody, ...gifFields }
-      generated = input.mode === 'edit'
-        ? await editOpenAICompatibleImage({ apiKey: credential, baseURL: wired.baseURL, model: wired.model, prompt: input.prompt, sourceImages, ...(size === undefined ? {} : { size }), maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, ...(quality === undefined ? {} : { quality }), ...(extraBody === undefined ? {} : { extraBody }), ...(p === 'openai-compat' ? { editFormat: wired.editFormat, editExtra: wired.editExtra, editSizeMode: requestConfig.openaiCompatEditSizeMode ?? 'auto' } : p === 'xai' ? { editFormat: 'xaiJson' as const } : {}) })
-        : await generateOpenAICompatibleImage({ provider: p, apiKey: credential, baseURL: wired.baseURL, model: wired.model, prompt: input.prompt, ...(size === undefined ? {} : { size }), maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, ...(quality === undefined ? {} : { quality }), ...(extraBody === undefined ? {} : { extraBody }) })
+      // rasterOnly would reject an SVG only after the provider has generated
+      // (and billed) it, so a channel that defaults to SVG is refused up front.
+      if (extraBody?.output_format === 'svg') throw new Error('该渠道默认输出 SVG；工作台仅支持位图，请更换渠道或调整渠道输出格式')
+      generated = rasterOnly(input.mode === 'edit'
+        ? await editOpenAICompatibleImage({ strictImageDownloads: requestConfig.strictImageDownloads === true, apiKey: credential, baseURL: wired.baseURL, model: wired.model, prompt: input.prompt, sourceImages, ...(size === undefined ? {} : { size }), maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, ...(quality === undefined ? {} : { quality }), ...(extraBody === undefined ? {} : { extraBody }), ...(p === 'openai-compat' ? { editFormat: wired.editFormat, editExtra: wired.editExtra, editSizeMode: requestConfig.openaiCompatEditSizeMode ?? 'auto' } : p === 'xai' ? { editFormat: 'xaiJson' as const } : {}) })
+        : await generateOpenAICompatibleImage({ strictImageDownloads: requestConfig.strictImageDownloads === true, provider: p, apiKey: credential, baseURL: wired.baseURL, model: wired.model, prompt: input.prompt, ...(size === undefined ? {} : { size }), maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, ...(quality === undefined ? {} : { quality }), ...(extraBody === undefined ? {} : { extraBody }) }))
       output = size ?? `${input.ratio}, ${input.quality}`
     } else if (wired.provider === 'seedream') {
       const size = cloudCapability('seedream', wired.model).sizeFor?.(input.ratio, input.quality) ?? input.quality
       const arkOptions = { ...wired.arkOptions, watermark: selectedWatermark(input.watermark, wired.arkOptions.watermark)! }
-      generated = input.mode === 'edit'
-        ? await editSeedreamImage({ apiKey: credential, baseURL: wired.baseURL, model: wired.model, prompt: input.prompt, sourceImages, size, maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, arkOptions })
-        : await generateOpenAICompatibleImage({ provider: 'seedream', apiKey: credential, baseURL: wired.baseURL, model: wired.model, prompt: input.prompt, size, maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, arkOptions })
+      generated = rasterOnly(input.mode === 'edit'
+        ? await editSeedreamImage({ strictImageDownloads: requestConfig.strictImageDownloads === true, apiKey: credential, baseURL: wired.baseURL, model: wired.model, prompt: input.prompt, sourceImages, size, maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, arkOptions })
+        : await generateOpenAICompatibleImage({ strictImageDownloads: requestConfig.strictImageDownloads === true, provider: 'seedream', apiKey: credential, baseURL: wired.baseURL, model: wired.model, prompt: input.prompt, size, maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, arkOptions }))
       output = size
     } else if (wired.provider === 'dashscope') {
       if (input.mode === 'edit' && sourceImages.length > 3) {
@@ -342,8 +408,8 @@ export async function generateFromStudio(
       const size = CLOUD_CAPABILITIES.dashscope.sizeFor?.(input.ratio, input.quality) ?? '1024x1024'
       const watermark = selectedWatermark(input.watermark)
       generated = input.mode === 'edit'
-        ? await editDashScopeImage({ apiKey: credential, endpoint: wired.endpoint, model: wired.model, prompt: input.prompt, sourceImages, size, maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, ...(watermark === undefined ? {} : { watermark }) })
-        : await generateDashScopeImage({ apiKey: credential, endpoint: wired.endpoint, model: wired.model, prompt: input.prompt, size, maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, ...(watermark === undefined ? {} : { watermark }) })
+        ? await editDashScopeImage({ strictImageDownloads: requestConfig.strictImageDownloads === true, apiKey: credential, endpoint: wired.endpoint, model: wired.model, prompt: input.prompt, sourceImages, size, maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, ...(watermark === undefined ? {} : { watermark }) })
+        : await generateDashScopeImage({ strictImageDownloads: requestConfig.strictImageDownloads === true, apiKey: credential, endpoint: wired.endpoint, model: wired.model, prompt: input.prompt, size, maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, ...(watermark === undefined ? {} : { watermark }) })
       output = size
     } else {
       throw new Error('当前渠道未接入 API 工作台')
