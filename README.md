@@ -1,6 +1,7 @@
-> **这是 [shanliuling/dsh-image-gen](https://github.com/shanliuling/dsh-image-gen) 的 fork**，包名为 `@forever-lwy/dsh-image-gen`，安装来源为 `github:forever-lwy/dsh-image-gen`（默认分支 `release` 存放预构建版本）。版本号为上游 `x.y.(patch×100+N)`，例如 0.11.102 基于上游 0.11.1。与上游的差异：
+> **这是 [shanliuling/dsh-image-gen](https://github.com/shanliuling/dsh-image-gen) 的 fork**，包名为 `@forever-lwy/dsh-image-gen`，安装来源为 `github:forever-lwy/dsh-image-gen`（默认分支 `release` 存放预构建版本）。版本号为上游 `x.y.(patch×100+N)`，本版 0.11.301 基于上游 0.11.3。与上游的差异：
 >
-> - 0.11.103 针对 DSH `0.2.2-rc.3` 构建与验证，设置统一走 `configForms`，删除旧 `settingsScope` / `installSection` 桥接；历史图片和配置迁移继续保留。
+> - 0.11.301 同步上游 0.11.3：模型发现、GIF 编辑与预览、SVG 输出和兼容渠道宽高比修复。
+> - 针对 DSH `0.2.2-rc.3` 构建与验证，设置统一走 `configForms`，删除旧 `settingsScope` / `installSection` 桥接；历史图片和配置迁移继续保留。
 > - tldraw 无限画布拆为按需加载的 `client.canvas.js`，首次显示画布时才下载；主包从约 5.1MB 降到约 0.8MB。
 > - `canvas_state` 与 `view_canvas` 合并为一个 `canvas` 工具（`action: state | view`）。
 > - `generate_image`、`generate_images`、`edit_image` 的共享选项说明压缩为一句话，各 provider 细则由系统提示中的默认值说明和参数校验报错给出；订阅参数规则只在启用订阅渠道时出现。三个工具定义从约 12.6KB 降到约 7.3KB，参数与行为不变。
