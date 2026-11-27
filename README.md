@@ -1,7 +1,7 @@
-> **这是 [shanliuling/dsh-image-gen](https://github.com/shanliuling/dsh-image-gen) 的 fork**，包名为 `@forever-lwy/dsh-image-gen`，安装来源为 `github:forever-lwy/dsh-image-gen`（默认分支 `release` 存放预构建版本）。版本号为上游 `x.y.(patch×100+N)`，本版 0.11.301 基于上游 0.11.3。与上游的差异：
+> **这是 [shanliuling/dsh-image-gen](https://github.com/shanliuling/dsh-image-gen) 的 fork**，包名为 `@forever-lwy/dsh-image-gen`，安装来源为 `github:forever-lwy/dsh-image-gen`（默认分支 `release` 存放预构建版本）。版本号为上游 `x.y.(patch×100+N)`，本版 0.12.301 基于上游 0.12.3。与上游的差异：
 >
-> - 0.11.301 同步上游 0.11.3：模型发现、GIF 编辑与预览、SVG 输出和兼容渠道宽高比修复。
-> - 针对 DSH `0.2.2-rc.3` 构建与验证，设置统一走 `configForms`，删除旧 `settingsScope` / `installSection` 桥接；历史图片和配置迁移继续保留。
+> - 0.12.301 同步上游 0.12.3，支持 ModelScope 异步生图、Seedream 分层导出、透明背景，以及按需画布的 tldraw 授权配置。
+> - 针对 DSH `0.2.2-rc.5` 构建与验证，设置统一走 `configForms`，删除旧 `settingsScope` / `installSection` 桥接；历史图片和配置迁移继续保留。
 > - tldraw 无限画布拆为按需加载的 `client.canvas.js`，首次显示画布时才下载；主包从约 5.1MB 降到约 0.8MB。
 > - `canvas_state` 与 `view_canvas` 合并为一个 `canvas` 工具（`action: state | view`）。
 > - `generate_image`、`generate_images`、`edit_image` 的共享选项说明压缩为一句话，各 provider 细则由系统提示中的默认值说明和参数校验报错给出；订阅参数规则只在启用订阅渠道时出现。三个工具定义从约 12.6KB 降到约 7.3KB，参数与行为不变。
@@ -16,7 +16,7 @@
 
 <p><strong>简体中文</strong> · <a href="README.en.md">English</a></p>
 
-# 🎨 dsh-image-gen
+# <img src="docs/assets/readme/logo-icon.webp" alt="鲸鱼娘" width="58" height="58" align="middle" /> dsh-image-gen
 
 ### 在 DeepSeek Harness 里，用说话的方式画图
 
@@ -25,15 +25,17 @@
 <p>
   <a href="https://www.npmjs.com/package/dsh-image-gen"><img src="https://img.shields.io/npm/v/dsh-image-gen?style=flat-square&color=4f6ef7" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/dsh-image-gen"><img src="https://img.shields.io/npm/dm/dsh-image-gen?style=flat-square&color=10b981" alt="npm downloads" /></a>
-  <a href="https://github.com/shanliuling/dsh-image-gen/actions/workflows/ci.yml"><img src="https://github.com/shanliuling/dsh-image-gen/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://dsh-insights.com/p/shanliuling/dsh-image-gen"><img src="https://dsh-insights.com/badge/shanliuling/dsh-image-gen.svg" alt="DSH Insights health" /></a>
+  <a href="https://trendoday.com/github/repo/shanliuling/dsh-image-gen"><img src="https://trendoday.com/badge/github/repo/shanliuling/dsh-image-gen.svg?style=flat" alt="Trendoday · GitHub Trending TypeScript 日榜第 8 名" /></a>
+  <a href="https://dshmarket.com/categories/workflow/"><img src="https://img.shields.io/badge/DSH%20Market-Workflow%20%E4%B8%8B%E8%BD%BD%E6%A6%9C%20%232-A45023?style=flat-square" alt="DSH Market Workflow 分类下载榜第 2 名" /></a>
   <a href="https://github.com/shanliuling/dsh-image-gen/stargazers"><img src="https://img.shields.io/github/stars/shanliuling/dsh-image-gen?style=flat-square" alt="GitHub stars" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-f5c542?style=flat-square" alt="License: Apache-2.0" /></a>
   <a href="https://linux.do/"><img src="https://img.shields.io/badge/LINUX%20DO-社区友链-555?style=flat-square" alt="LINUX DO" /></a>
 </p>
 
 <p>
-  <a href="https://atomgit.com/shanliuling/dsh-image-gen"><img src="https://atomgit.com/shanliuling/dsh-image-gen/star/new_badge.svg" alt="AtomGit" height="55" /></a>
+  <a href="https://trendshift.io/repositories/167406"><img src="https://trendshift.io/api/badge/repositories/167406" alt="GitHub Trending TypeScript 日榜第 8 名 · Trendshift" width="182" height="40" /></a>
+  <a href="https://trendoday.com/github/repo/shanliuling/dsh-image-gen"><img src="https://trendoday.com/badge/github/repo/shanliuling/dsh-image-gen.svg" alt="GitHub Trending TypeScript 日榜第 8 名 · Trendoday" height="40" /></a>
+  <a href="https://atomgit.com/shanliuling/dsh-image-gen"><img src="https://atomgit.com/shanliuling/dsh-image-gen/star/new_badge.svg" alt="AtomGit" height="40" /></a>
 </p>
 
 <p>
@@ -219,6 +221,8 @@ pnpm dsh plugin --profile web add ./dsh-image-gen
 - **圈哪改哪**：在已有图片上用画笔圈出局部，说「把这里换成斧头」，只改圈出的部分。
 - **组合参考**：把「最近生成」或图库里的图拖进画布，或点击缩略图上的「发送到画布」，多张一起选中作为参考。同一张历史图片重复导入会自动去重。
 - 每一步结果都留在画布上，随时可以从任意一版继续往下迭代。
+
+> **HTTPS 部署提示**：tldraw 5 在 HTTPS 域名（非 localhost）下按生产环境处理，必须配置有效的 tldraw License Key 才能渲染无限画布。请在插件设置页的「无限画布」区域填写自己的密钥（配置文件字段为 `tldrawLicenseKey`）；未配置时无限画布会在约 5 秒后停止渲染，控制台提示 `No tldraw license key provided!`，其他生图功能不受影响。许可证可在 [tldraw.dev](https://tldraw.dev/get-a-license/trial) 申请（提供 100 天试用）。
 
 <div align="center">
   <img src="docs/assets/readme/canvas-edit.webp" alt="在画布上圈出剑，说一句话，Agent 只把剑换成战斧" width="100%" />
@@ -444,9 +448,37 @@ dsh --profile web --dump-config
 </details>
 
 <details>
+<summary><strong>通过 HTTPS 域名访问时无限画布打不开，控制台提示 No tldraw license key provided 怎么办？</strong></summary>
+
+tldraw 5 的 SDK 在 HTTPS 非 localhost 的生产环境强制校验许可证。请在插件设置页的「无限画布」区域填写你自己的 tldraw License Key（配置文件字段为 `tldrawLicenseKey`），保存后重新打开工作台或刷新页面。该 Key 是公开字符串，会随前端下发，并按部署域名校验；请使用与当前访问域名匹配的许可证。
+
+未配置时，无限画布在 `localhost` 或开发环境中仍可用；通过 HTTPS 域名部署时会在约 5 秒后停止渲染，其他生图功能不受影响。可在 [tldraw.dev](https://tldraw.dev/get-a-license/trial) 申请 100 天试用，商业与爱好许可证见 [tldraw 定价页](https://tldraw.dev/pricing)。
+
+</details>
+
+<details>
 <summary><strong>从图库删除会删除聊天记录吗？</strong></summary>
 
 不会。删除图库记录不会修改原聊天消息。你可以额外选择是否清理工作区中的本地图片文件；文件删除通常无法恢复，请确认后操作。
+
+</details>
+
+<details>
+<summary><strong>从 GitHub 安装时，pnpm 拦截构建脚本怎么办？</strong></summary>
+
+如果报 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`，打开 DSH 提示的 profile 下的 `pnpm-workspace.yaml`，把 pnpm 输出的完整键加入 `allowBuilds` 并设为 `true`，然后重跑 GitHub 安装命令。如果换了 Git 提交后再次遇到该错误，用新输出的键。日常安装可直接使用预构建的 npm 包。
+
+</details>
+
+<details>
+<summary><strong>上传参考图后提示“当前模型不支持图片，请切换支持图片的模型”怎么办？</strong></summary>
+
+这句提示来自 DSH 宿主，不是插件：消息发出前，DSH 会检查**对话模型**能否接收图片。对话模型如果是 Kilo 这类纯文本模型，带图的消息在到达插件之前就会被拦下。插件里配置的生图模型（例如 Google One 订阅下的 Gemini 3.1 Flash Image）是另一个模型，宿主这一步不会看它。
+
+可以这样处理：
+
+1. 把对话模型换成支持图片输入的模型，生图渠道保持不变。最终出图的始终是插件里配置的生图渠道，与对话模型无关。
+2. 不想换对话模型时，把参考图放进当前工作区，不要直接上传，然后在对话里写明路径，例如「用工作区里的 ref/cat.png 当参考图，给猫戴上墨镜」。`edit_image` 会通过 `source_path` / `source_paths` 读取工作区文件，不经过对话模型的图片检查。
 
 </details>
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { studioProfile } from '../src/studio.js'
 import { DEFAULT_MODELS } from '../src/shared.js'
-import { comfyUIWorkflowWrites, pillButtonLabel, pillModelOf, pillModelOptionsOf, pillVisible } from '../src/client/provider-pill.js'
+import { comfyUIWorkflowWrites, pillButtonLabel, pillEntryVisible, pillModelOf, pillModelOptionsOf, pillVisible } from '../src/client/provider-pill.js'
 
 describe('composer provider pill visibility (opt-in)', () => {
   it('stays hidden by default and only appears when explicitly enabled', () => {
@@ -11,11 +12,29 @@ describe('composer provider pill visibility (opt-in)', () => {
   })
 })
 
+describe('composer provider pill rows (#158)', () => {
+  it('hides rows that cannot generate yet, but never the active one or one still loading', () => {
+    expect(pillEntryVisible('ready', false)).toBe(true)
+    expect(pillEntryVisible('missing', false)).toBe(false)
+    expect(pillEntryVisible('missing', true)).toBe(true)
+    expect(pillEntryVisible('unknown', false)).toBe(true)
+  })
+})
+
 describe('composer provider pill model choices', () => {
   it('keeps providers without a model list on the single-row provider flow', () => {
     expect(pillModelOptionsOf('google', { googleModel: 'gemini-3.1-flash-image' })).toEqual([])
     expect(pillModelOptionsOf('openai', { openaiModel: 'gpt-image-2' })).toEqual([])
     expect(pillModelOptionsOf('dashscope', { dashscopeModel: 'qwen-image-3.0' })).toEqual([])
+  })
+
+  it('merges discovered models with the saved model and keeps channel choices separate', () => {
+    const models = [{ value: 'another-model', label: 'another-model' }]
+    const profile = { ...studioProfile({}, 'seedream', true), modelOptions: models }
+    expect(pillModelOptionsOf('seedream', { seedreamModel: 'my-model' }, undefined, profile)).toEqual(['my-model', 'another-model'])
+    expect(pillModelOptionsOf('seedream', {}, undefined, { ...profile, configured: false })).toEqual([])
+    const relay = { ...studioProfile({ openaiCompatBaseURL: 'https://relay.example/v1', openaiCompatModel: 'saved' }, 'openai-compat', true, 'default'), modelOptions: models }
+    expect(pillModelOptionsOf('openai-compat', { openaiCompatModel: 'saved' }, 'default', relay)).toEqual(['saved', 'another-model'])
   })
 
   it('normalizes configured model choices without moving an existing default', () => {

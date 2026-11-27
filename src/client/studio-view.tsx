@@ -32,7 +32,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
-import { DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, STUDIO_ROUTE, thumbUrlFor, isSubscriptionProvider, studioWatermarkCapability, studioModelForMode, studioModelOptionsForMode, studioTargetKey, type CloudImageProvider, type StudioConfigResponse, type StudioGenerateResponse, type StudioGeneratedItem, type StudioProvider, type StudioProviderProfile, type StudioReference, type StudioWatermark } from '../shared.js'
+import { GIF_FRAME_COUNT_MIN, GIF_FRAME_COUNT_MAX, GIF_FRAME_DURATION_MS_MIN, GIF_FRAME_DURATION_MS_MAX, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, STUDIO_ROUTE, thumbUrlFor, isSubscriptionProvider, studioWatermarkCapability, studioModelForMode, studioModelOptionsForMode, studioTargetKey, type CloudImageProvider, type StudioConfigResponse, type StudioGenerateResponse, type StudioGeneratedItem, type StudioProvider, type StudioProviderProfile, type StudioReference, type StudioWatermark } from '../shared.js'
 import { deleteGalleryItem, getGalleryItems, subscribeGallery, toggleFavoriteGalleryItem, type GalleryItem, saveFavoritePrompt, getFavoritePrompts, deleteFavoritePrompt, subscribeFavorites, addFavoriteFolder, getFavoriteFolders, deleteFavoriteFolder, moveFavoritePrompt, updateFavoritePrompt, type FavoritePrompt, type FavoriteFolder } from './gallery-store.js'
 import { persistGalleryRecord } from './gallery-media.js'
 import { imageVersionKey } from './image-result-node.js'
@@ -41,6 +41,7 @@ import { copyImageBlob, downloadBlobUrl, formatRelativeTime } from './browser-im
 import { buildComparisonTargets, comparisonOptionUnion, comparisonOutputOptions, initialComparisonProviders } from './multi-model-compare.js'
 import { WatermarkControl } from './watermark-control.js'
 import { clearStudioTlCanvases, StudioTlCanvas } from './tl/lazy-studio-canvas.js'
+import { StudioCanvasGate, studioCanvasLicenseState } from './tl/studio-canvas-gate.js'
 import { pushTlLandings } from './tl/tl-canvas-bridge.js'
 import { GalleryCanvasButton } from './tl/gallery-canvas-button.js'
 import { startGalleryImageDrag } from './tl/gallery-image-transfer.js'
@@ -55,13 +56,15 @@ import {
   hasSubscriptionRatioMismatch,
   localizeQualityOptions,
   localizeRatioOptions,
+  localizeResolutionOptions,
+  studioProfileLabel,
   messageOf,
   useAttachmentImage,
   useInView,
   type RecentItemActions,
 } from './studio-helpers.js'
 import { evictAttachmentCache, fetchAttachmentBlob } from './image-cache.js'
-import { PROVIDER_DEFAULT_QUALITY } from '../openai-output.js'
+import { workbenchGifOutput, PROVIDER_DEFAULT_QUALITY } from '../openai-output.js'
 
 
 const PAGE_SIZE = 12
@@ -69,7 +72,12 @@ const MODEL_DISCOVERY_POLL_MS = 1_000
 const MODEL_DISCOVERY_WINDOW_MS = 12_000
 
 /** Below this workbench width the recent-generations rail folds automatically. */
-const WORKBENCH_NARROW_WIDTH = 560
+// A laptop's right-sidebar seat (#130) is wider than 560 px yet too narrow for
+// three columns: with the rail open the canvas column shrank to ~200 px and its
+// toolbar labels wrapped one glyph per line.
+const WORKBENCH_NARROW_WIDTH = 760
+/** Below this canvas-column width the toolbar drops its labels and keeps icons, with the text in each title. */
+const CANVAS_TOOLBAR_COMPACT_WIDTH = 520
 
 type Mode = 'generate' | 'edit'
 type BatchKind = StudioViewState['batchKind'] & string
@@ -94,6 +102,8 @@ const COPY = {
     generate: '文生图', edit: '图生图', reference: '参考图', optional: '选填', upload: '点击或拖拽图片到此处',
     uploadHint: '支持 JPG / PNG / WebP / GIF，最大 10MB（最多 5 张）', prompt: '提示词 Prompt', clear: '清空', promptPlaceholder: '描述主体、构图、风格、光线与需要出现的文字…（支持 Ctrl+Enter 快捷生成）',
     provider: 'Provider', model: 'Model', ratio: '比例', quality: '清晰度', subscriptionParameterHint: '所选比例会自动补充到生成提示词中；实际尺寸和清晰度仍由 ChatGPT 决定，请以生成结果为准。', subscriptionRatioMismatch: 'ChatGPT 订阅未按所选比例出图，请查看实际尺寸。', start: '开始生成', generating: '正在生成…', cancelGenerate: '取消生成',
+    gif: '自定义 GIF 动图', frames: '帧数（2–16）', duration: '每帧时长（20–2000 毫秒）', channelDefault: '渠道默认',
+    invalidGif: '请输入 2–16 的整数帧数和 20–2000 毫秒的帧时长（10 毫秒一档），也可以留空。', gifReference: '生成动图只能使用一张参考图，请移除多余图片。', gifStill: '渠道返回了一张静态图，已保留结果。',
     count: '生成数量', countUnit: '{n} 张', partialSuccess: '已生成 {success} 张图片，{failed} 张失败', generatingCount: '正在生成（共 {count} 张）…',
     batchResult: '本次生成（共 {count} 张）',
     singleModel: '单模型', compareModels: '多模型对比', compareHint: '相同提示词，同时交给多个模型', compareSelect: '选择模型', compareSelected: '已选 {count} 个模型',
@@ -103,7 +113,7 @@ const COPY = {
     retry: '重新加载', configLoadFailed: '工作台配置加载失败，请检查服务后重试。',
     noProvider: '请先在设置中配置至少一个云端图像 Provider 的 API Key。', selectConfigured: '该 Provider 尚未配置，请先到设置中配置 API Key。',
     needPrompt: '请输入提示词', needReference: '请先添加至少一张参考图', result: '本次结果', continueEdit: '继续编辑（垫图）', regenerate: '再次生成',
-    copy: '复制', copied: '已复制到剪贴板', copyFailed: '复制失败', download: '下载', remove: '删除', fit: '适应窗口', infiniteCanvas: '无限画布', loading: '正在读取图片…', generationFailed: '生成失败', gatewayTimeout: '请求被反向代理中断（超时）：请重试；反复出现需调大代理超时或换直连网络', requestFailed: '请求失败（HTTP {status}）',
+    copy: '复制', copied: '已复制到剪贴板', copyFailed: '复制失败', download: '下载', remove: '删除', fit: '适应窗口', infiniteCanvas: '无限画布', canvasLoading: '正在加载画布…', loading: '正在读取图片…', generationFailed: '生成失败', gatewayTimeout: '请求被反向代理中断（超时）：请重试；反复出现需调大代理超时或换直连网络', requestFailed: '请求失败（HTTP {status}）',
     selectHistory: '从左侧选择一张图片，或在右侧开始新的生成。', created: '生成时间', elapsed: '耗时', dimensions: '尺寸', output: '输出参数',
     closeReference: '移除参考图', uploadInvalid: '请选择有效的图片文件（最大 10MB）', uploadUnreadable: '部分图片读取失败，请重新选择后再试', imageLoadFailed: '图片读取失败',
     fullscreen: '大图全屏', close: '关闭', copyPpt: '复制 Prompt', copiedPrompt: '已复制 Prompt', copiedImage: '已复制图片',
@@ -132,6 +142,8 @@ const COPY = {
     generate: 'Text to image', edit: 'Image to image', reference: 'Reference image', optional: 'optional', upload: 'Click or drop images here',
     uploadHint: 'JPG / PNG / WebP / GIF, up to 10MB (max 5)', prompt: 'Prompt', clear: 'Clear', promptPlaceholder: 'Describe the subject, composition, style, lighting, and exact text… (Ctrl+Enter to generate)',
     provider: 'Provider', model: 'Model', ratio: 'Aspect ratio', quality: 'Quality', subscriptionParameterHint: 'The selected aspect ratio is automatically added to the generation prompt. ChatGPT still determines the final dimensions and quality; check the generated result.', subscriptionRatioMismatch: 'ChatGPT subscription returned a different aspect ratio. Check the actual dimensions.', start: 'Generate', generating: 'Generating…', cancelGenerate: 'Cancel',
+    gif: 'Customize animated GIF', frames: 'Frames (2–16)', duration: 'Frame duration (20–2000 ms)', channelDefault: 'Channel default',
+    invalidGif: 'Enter 2–16 whole frames and 20–2000 ms in 10 ms steps, or leave the fields blank.', gifReference: 'Remove extra references to use a single image for GIF editing.', gifStill: 'The channel returned a still image. The result has been kept.',
     count: 'Number of images', countUnit: '{n}', partialSuccess: 'Generated {success} images, {failed} failed', generatingCount: 'Generating ({count} images)…',
     batchResult: 'Generated {count} images',
     singleModel: 'Single model', compareModels: 'Compare models', compareHint: 'Send the same prompt to multiple models', compareSelect: 'Choose models', compareSelected: '{count} models selected',
@@ -141,7 +153,7 @@ const COPY = {
     retry: 'Retry', configLoadFailed: 'Failed to load studio configuration.',
     noProvider: 'Configure an API key for at least one cloud image provider in Settings.', selectConfigured: 'This provider is not configured. Add its API key in Settings first.',
     needPrompt: 'Enter a prompt', needReference: 'Add at least one reference image first', result: 'Current result', continueEdit: 'Continue editing', regenerate: 'Generate again',
-    copy: 'Copy', copied: 'Copied to clipboard', copyFailed: 'Copy failed', download: 'Download', remove: 'Delete', fit: 'Fit', infiniteCanvas: 'Infinite canvas', loading: 'Loading image…', generationFailed: 'Generation failed', gatewayTimeout: 'The reverse proxy cut the request (timeout): retry; if it repeats, raise the proxy timeout or use a direct network.', requestFailed: 'Request failed (HTTP {status})',
+    copy: 'Copy', copied: 'Copied to clipboard', copyFailed: 'Copy failed', download: 'Download', remove: 'Delete', fit: 'Fit', infiniteCanvas: 'Infinite canvas', canvasLoading: 'Loading canvas…', loading: 'Loading image…', generationFailed: 'Generation failed', gatewayTimeout: 'The reverse proxy cut the request (timeout): retry; if it repeats, raise the proxy timeout or use a direct network.', requestFailed: 'Request failed (HTTP {status})',
     selectHistory: 'Select an image on the left, or start a new generation on the right.', created: 'Created', elapsed: 'Elapsed', dimensions: 'Dimensions', output: 'Output',
     closeReference: 'Remove reference', uploadInvalid: 'Choose a valid image file up to 10MB.', uploadUnreadable: 'Some images could not be read; pick them again.', imageLoadFailed: 'Could not load image',
     fullscreen: 'Fullscreen', close: 'Close', copyPpt: 'Copy Prompt', copiedPrompt: 'Prompt copied', copiedImage: 'Image copied',
@@ -211,6 +223,9 @@ export const StudioView: FC<{
   const [config, setConfig] = useState<StudioConfigResponse | null>(null)
   const [configLoading, setConfigLoading] = useState(true)
   const [configError, setConfigError] = useState<string | null>(null)
+  const [initialConfigSettled, setInitialConfigSettled] = useState(false)
+  // Retrying config must not unmount an open editor before its last edit is persisted.
+  const canvasLicenseState = studioCanvasLicenseState(config, !initialConfigSettled)
   const [items, setItems] = useState<GalleryItem[]>([])
   /** Which rail tab is showing: generation history or the favorites rail. */
   const [railTab, setRailTab] = useState<'recent' | 'favorites'>('recent')
@@ -232,6 +247,8 @@ export const StudioView: FC<{
   const [generateCollapsed, setGenerateCollapsed] = useState(initialCanvasSurface === 'infinite' && initialPrompt === undefined)
   /** Workbench root, observed so a narrow column (right sidebar) can fold the recent rail. */
   const workbenchRootRef = useRef<HTMLElement | null>(null)
+  const canvasColumnRef = useRef<HTMLElement | null>(null)
+  const [canvasToolbarCompact, setCanvasToolbarCompact] = useState(false)
   /** Set once the user toggles the rail by hand; auto-folding then stands down for this mount. */
   const railToggledByUserRef = useRef(false)
   const [visibleLimit, setVisibleLimit] = useState(30)
@@ -261,7 +278,10 @@ export const StudioView: FC<{
   const [watermark, setWatermark] = useState<StudioWatermark>('default')
   const [prompt, setPrompt] = useState('')
   const [references, setReferences] = useState<StudioReferenceItem[]>([])
-  const [count, setCount] = useState(1)
+  const [requestedCount, setCount] = useState(1)
+  const [gifTarget, setGifTarget] = useState('')
+  const [frameCount, setFrameCount] = useState('')
+  const [frameDuration, setFrameDuration] = useState('')
   const [currentBatch, setCurrentBatch] = useState<GalleryItem[] | null>(() => restoredView?.currentBatch ?? null)
   const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>(() => restoredView?.selectedBatchIds ?? [])
   const [batchKind, setBatchKind] = useState<BatchKind | null>(() => restoredView?.batchKind ?? null)
@@ -349,7 +369,26 @@ export const StudioView: FC<{
     return () => { observer.disconnect() }
   }, [])
 
-  const maxReferences = comparisonEnabled
+  // The canvas column is what the toolbar must fit, whatever the panels beside it do.
+  useEffect(() => {
+    const column = canvasColumnRef.current
+    if (column === null || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const compact = entry.contentRect.width < CANVAS_TOOLBAR_COMPACT_WIDTH
+        setCanvasToolbarCompact(prev => (prev === compact ? prev : compact))
+      }
+    })
+    observer.observe(column)
+    return () => { observer.disconnect() }
+  }, [])
+
+  const activeProfile = useMemo(() => config?.providers.find(item => item.provider === provider && item.channel === channel), [config, provider, channel])
+  const gifAvailable = !comparisonEnabled && (mode === 'edit' ? activeProfile?.supportsGifEditing : activeProfile?.supportsGif)
+  const target = studioTargetKey(provider, channel)
+  const useGif = gifAvailable === true && gifTarget === target
+  const count = useGif ? 1 : requestedCount
+  const maxReferences = useGif ? 1 : comparisonEnabled
     ? (comparisonProviderKeys.includes('dashscope') ? 3 : 5)
     : (provider === 'dashscope' ? 3 : 5)
   const referencesRef = useRef(references)
@@ -419,7 +458,10 @@ export const StudioView: FC<{
     } catch (fetchError) {
       if (!silent && !signal?.aborted) setConfigError(messageOf(fetchError))
     } finally {
-      if (!silent && !signal?.aborted) setConfigLoading(false)
+      if (!silent && !signal?.aborted) {
+        setInitialConfigSettled(true)
+        setConfigLoading(false)
+      }
     }
   }, [])
 
@@ -564,7 +606,6 @@ export const StudioView: FC<{
     }
   }, [])
 
-  const activeProfile = useMemo(() => config?.providers.find(item => item.provider === provider && item.channel === channel), [config, provider, channel])
   const requestModel = mode === 'edit' && activeProfile?.editModel ? studioModelForMode(activeProfile, mode) : model
   const configuredCount = config?.providers.filter(item => item.configured).length ?? 0
   // Split badge counts: BYOK keys and subscription sign-ins stay separately
@@ -917,6 +958,9 @@ export const StudioView: FC<{
   const submit = async () => {
     if (isGenerating || activeProfile === undefined) return
     if (prompt.trim().length === 0) return setError(t('needPrompt'))
+    if (useGif && mode === 'edit' && references.length > 1) return setError(t('gifReference'))
+    const gifOutput = useGif ? workbenchGifOutput(frameCount, frameDuration) : undefined
+    if (useGif && !gifOutput) return setError(t('invalidGif'))
     if (comparisonEnabled && comparisonTargets.length < 2) return setError(t('compareNeedTwo'))
     if (!comparisonEnabled && !activeProfile.configured) return setError(t('selectConfigured'))
     if (mode === 'edit' && references.length === 0) return setError(t('needReference'))
@@ -970,7 +1014,7 @@ export const StudioView: FC<{
           })
           const payload = await readStudioBody(response)
           if (!response.ok || !('attachment' in payload)) {
-            throw new Error('error' in payload && payload.error ? payload.error : `${target.profile.label}: ${t('generationFailed')}`)
+            throw new Error('error' in payload && payload.error ? payload.error : `${studioProfileLabel(target.profile, lang)}: ${t('generationFailed')}`)
           }
           return { payload, target }
         }))
@@ -1038,6 +1082,7 @@ export const StudioView: FC<{
           ...(selectedResolution === undefined ? {} : { resolution: selectedResolution }),
           ...(provider === 'openai-compat' ? { generationQuality: selectedGenerationQuality } : {}),
           ...(watermarkCapability.status === 'supported' ? { watermark } : {}),
+          ...(gifOutput ? { output: gifOutput } : {}),
           ...(count > 1 ? { count } : {}),
           ...(workspace?.path ? { workspaceRoot: workspace.path } : {}),
           ...(referencesPayload === undefined ? {} : {
@@ -1100,6 +1145,7 @@ export const StudioView: FC<{
         view,
         notice: payload.failedCount && payload.failedCount > 0
           ? t('partialSuccess', { success: String(generatedList.length), failed: String(payload.failedCount) })
+          : payload.gifReturnedStill || payload.items?.some(item => item.gifReturnedStill) ? t('gifStill')
           : galleryEntries.some(hasSubscriptionRatioMismatch) ? t('subscriptionRatioMismatch') : undefined,
       }
     } catch (submitError) {
@@ -1489,8 +1535,8 @@ export const StudioView: FC<{
           </div>
         )}
 
-        <main className="dsh-ig-canvas-column">
-          <div className="dsh-ig-canvas-toolbar">
+        <main ref={canvasColumnRef} className="dsh-ig-canvas-column">
+          <div className={`dsh-ig-canvas-toolbar${canvasToolbarCompact ? ' is-compact' : ''}`}>
             <div className="dsh-ig-canvas-toolbar-left">
               {sidebarCollapsed && (
                 <button
@@ -1503,7 +1549,11 @@ export const StudioView: FC<{
                 </button>
               )}
               <div className="dsh-ig-status-badge-wrap">
-                <div className="dsh-ig-status-badge">
+                <div className="dsh-ig-status-badge" title={configuredCount > 0
+                  ? (subscriptionSignedInCount > 0
+                      ? t('configuredSplit', { api: String(apiConfiguredCount), sub: String(subscriptionSignedInCount) })
+                      : t('configuredCount', { count: String(apiConfiguredCount) }))
+                  : t('unconfiguredStatus')}>
                   <span className={`dsh-ig-status-dot ${configuredCount > 0 ? 'is-ready' : 'is-muted'}`} />
                   <span className="dsh-ig-status-text">
                     {configuredCount > 0
@@ -1521,7 +1571,7 @@ export const StudioView: FC<{
                       {config.providers.map(p => (
                         <li key={p.provider} className={p.configured ? 'is-configured' : 'is-missing'}>
                           <div className="dsh-ig-status-item-name">
-                            <strong>{p.label}</strong>
+                            <strong>{studioProfileLabel(p, lang)}</strong>
                             <small>{studioModelForMode(p, mode)}</small>
                           </div>
                           <span className="dsh-ig-status-item-tag">
@@ -1609,7 +1659,9 @@ export const StudioView: FC<{
             </div>
           )}
           {canvasSurface === 'infinite' ? (
-            <StudioTlCanvas lang={lang} />
+            <StudioCanvasGate state={canvasLicenseState} loadingLabel={t('canvasLoading')}>
+              <StudioTlCanvas lang={lang} licenseKey={config?.tldrawLicenseKey} />
+            </StudioCanvasGate>
           ) : (
           <div
             className={`dsh-ig-canvas ${isDragging ? 'is-dragging' : ''}`}
@@ -1621,7 +1673,7 @@ export const StudioView: FC<{
               <div className="dsh-ig-generating-state">
                 <div className="dsh-ig-generation-orbit"><Sparkles size={28} /></div>
                 <strong>{comparisonEnabled ? t('comparing', { count: String(comparisonTargets.length) }) : count > 1 ? t('generatingCount', { count: String(count) }) : t('generating')}</strong>
-                <span>{comparisonEnabled ? comparisonTargets.map(target => target.profile.label).join(' · ') : `${activeProfile?.label ?? ''} · ${requestModel}`}</span>
+                <span>{comparisonEnabled ? comparisonTargets.map(target => studioProfileLabel(target.profile, lang)).join(' · ') : `${activeProfile === undefined ? '' : studioProfileLabel(activeProfile, lang)} · ${requestModel}`}</span>
               </div>
             ) : currentBatch && currentBatch.length > 1 ? (
               <div
@@ -1856,7 +1908,7 @@ export const StudioView: FC<{
                       return (
                         <button key={targetKey} type="button" className={target ? 'is-selected' : ''} aria-pressed={Boolean(target)} onClick={() => toggleComparisonProvider(targetKey)}>
                           <span className="dsh-ig-model-checkmark">{target ? <Check size={12} /> : null}</span>
-                          <span className="dsh-ig-model-copy"><strong>{item.label}</strong><small title={studioModelForMode(item, mode)}>{studioModelForMode(item, mode)}</small></span>
+                          <span className="dsh-ig-model-copy"><strong>{studioProfileLabel(item, lang)}</strong><small title={studioModelForMode(item, mode)}>{studioModelForMode(item, mode)}</small></span>
                           {target && <span className="dsh-ig-model-settings">{[target.ratio, target.resolution, target.quality === target.resolution ? undefined : target.quality, target.generationQuality === PROVIDER_DEFAULT_QUALITY ? undefined : target.generationQuality].filter(Boolean).join(' · ')}{target.adjusted ? <em>{t('compareAdjusted')}</em> : null}</span>}
                         </button>
                       )
@@ -1866,23 +1918,30 @@ export const StudioView: FC<{
                 </div>
                 <div className="dsh-ig-field-grid is-output-grid">
                   <FieldSelect label={t('ratio')} value={ratio} onChange={setRatio} options={comparisonRatioOpts} />
-                  {comparisonResolutionOpts.length > 0 ? <FieldSelect label={lang === 'en' ? 'Resolution' : '分辨率'} value={comparisonResolution} onChange={setResolution} options={comparisonResolutionOpts} /> : null}
+                  {comparisonResolutionOpts.length > 0 ? <FieldSelect label={lang === 'en' ? 'Resolution' : '分辨率'} value={comparisonResolution} onChange={setResolution} options={localizeResolutionOptions(comparisonResolutionOpts, lang)} /> : null}
                   {comparisonGenerationQualityOpts.length > 0 ? <FieldSelect label={lang === 'en' ? 'Generation quality' : '生成质量'} value={comparisonGenerationQuality} onChange={setGenerationQuality} options={comparisonGenerationQualityOpts} /> : null}
                   <WatermarkControl capability={comparisonWatermarkCapability} value={watermark} onChange={setWatermark} lang={lang} />
                 </div>
                 {comparisonWatermarkCapability.status === 'supported' ? <div className="dsh-ig-inline-note">{lang === 'en' ? 'Watermark applies only to models with confirmed support for this operation.' : '水印选项仅用于已确认支持当前操作的模型。'}</div> : null}
                 {comparisonTargets.some(target => target.profile.provider === 'chatgpt-sub') && <div className="dsh-ig-inline-note">{t('subscriptionParameterHint')}</div>}
               </> : <>
-                <div className="dsh-ig-field-grid"><FieldSelect label={t('provider')} value={studioTargetKey(provider, channel)} onChange={changeProfile} options={config.providers.map(item => ({ value: studioTargetKey(item.provider, item.channel), label: `${item.label}${item.configured ? '' : ` · ${t('unconfigured')}`}` }))} /><FieldSelect label={t('model')} value={requestModel} onChange={setModel} options={activeProfile === undefined ? [] : studioModelOptionsForMode(activeProfile, mode)} /></div>
+                <div className="dsh-ig-field-grid"><FieldSelect label={t('provider')} value={studioTargetKey(provider, channel)} onChange={changeProfile} options={config.providers.map(item => ({ value: studioTargetKey(item.provider, item.channel), label: `${studioProfileLabel(item, lang)}${item.configured ? '' : ` · ${t('unconfigured')}`}` }))} /><FieldSelect label={t('model')} value={requestModel} onChange={setModel} options={activeProfile === undefined ? [] : studioModelOptionsForMode(activeProfile, mode)} /></div>
                 <div className="dsh-ig-field-grid is-output-grid">
                   <FieldSelect label={t('ratio')} value={ratio} onChange={setRatio} options={localizeRatioOptions(activeProfile?.ratioOptions ?? [], lang)} />
                   {resolutionOpts.length > 0 ? <FieldSelect label={lang === 'en' ? 'Resolution' : '分辨率'} value={selectedResolution ?? ''} onChange={setResolution} options={resolutionOpts} /> : null}
-                  <FieldSelect label={['openai', 'chatgpt-sub', 'zhipu'].includes(provider) ? (lang === 'en' ? 'Generation quality' : '生成质量') : (lang === 'en' ? 'Resolution' : '分辨率')} value={selectedQuality} onChange={value => { setQuality(value); if (provider === 'openai') setGenerationQuality(value); else setResolution(value) }} options={provider === 'openai-compat' ? singleQualityOpts : localizeQualityOptions(singleQualityOpts, lang)} />
+                  <FieldSelect label={['openai', 'chatgpt-sub', 'zhipu'].includes(provider) ? (lang === 'en' ? 'Generation quality' : '生成质量') : (lang === 'en' ? 'Resolution' : '分辨率')} value={selectedQuality} onChange={value => { setQuality(value); if (provider === 'openai') setGenerationQuality(value); else setResolution(value) }} options={provider === 'openai-compat' ? localizeResolutionOptions(singleQualityOpts, lang) : localizeQualityOptions(singleQualityOpts, lang)} />
                   {activeProfile?.generationQualityOptions ? <FieldSelect label={lang === 'en' ? 'Generation quality' : '生成质量'} value={selectedGenerationQuality} onChange={setGenerationQuality} options={localizeQualityOptions(activeProfile.generationQualityOptions, lang)} /> : null}
                   <WatermarkControl capability={watermarkCapability} value={watermark} onChange={setWatermark} lang={lang} />
                 </div>
                 {provider === 'chatgpt-sub' && <div className="dsh-ig-inline-note">{t('subscriptionParameterHint')}</div>}
-                <div className="dsh-ig-field"><label>{t('count')}</label><div className="dsh-ig-count-row">{[1, 2, 3, 4].map(option => <button key={option} type="button" className={`dsh-ig-count-pill ${count === option ? 'is-active' : ''}`} onClick={() => setCount(option)}>{t('countUnit', { n: String(option) })}</button>)}</div></div>
+                {gifAvailable && <div className="dsh-ig-field">
+                  <label><input type="checkbox" checked={useGif} onChange={event => setGifTarget(event.target.checked ? target : '')} /> {t('gif')}</label>
+                  {useGif && <div className="dsh-ig-field-grid">
+                    <label>{t('frames')}<input className="dsh-ig-input" type="number" min={GIF_FRAME_COUNT_MIN} max={GIF_FRAME_COUNT_MAX} step={1} placeholder={t('channelDefault')} value={frameCount} onChange={event => setFrameCount(event.target.value)} /></label>
+                    <label>{t('duration')}<input className="dsh-ig-input" type="number" min={GIF_FRAME_DURATION_MS_MIN} max={GIF_FRAME_DURATION_MS_MAX} step={10} placeholder={t('channelDefault')} value={frameDuration} onChange={event => setFrameDuration(event.target.value)} /></label>
+                  </div>}
+                </div>}
+                <div className="dsh-ig-field"><label>{t('count')}</label><div className="dsh-ig-count-row">{[1, 2, 3, 4].map(option => <button key={option} type="button" className={`dsh-ig-count-pill ${count === option ? 'is-active' : ''}`} disabled={useGif && option !== 1} onClick={() => setCount(option)}>{t('countUnit', { n: String(option) })}</button>)}</div></div>
               </>}
             </>}
             {configuredCount === 0 && config !== null && <div className="dsh-ig-inline-note">{t('noProvider')}</div>}

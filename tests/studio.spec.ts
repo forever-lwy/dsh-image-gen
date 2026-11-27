@@ -113,6 +113,8 @@ describe('image workbench provider capabilities', () => {
     // a guaranteed upstream error.
     expect(seedream.ratioOptions.map(o => o.value)).toEqual(['auto', '1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'])
     expect(seedream.qualityOptions.map(o => o.value)).toEqual(['1K', '1.5K', '2K'])
+    expect(studioProfile({ seedreamModel: 'doubao-seedream-5-5-261028' }, 'seedream', true).qualityOptions.map(o => o.value)).toEqual(['1K', '1.5K', '2K'])
+    expect(studioProfile({ seedreamModel: 'doubao-seedream-5-5-261028-lite' }, 'seedream', true).qualityOptions.map(o => o.value)).toEqual(['2K', '3K', '4K'])
     expect(studioProfile({ seedreamModel: 'doubao-seedream-4-0-250828' }, 'seedream', true).qualityOptions.map(o => o.value)).toEqual(['2K', '3K', '4K'])
     // A saved retired model, the former default among them, runs on its replacement.
     expect(studioProfile({ seedreamModel: 'doubao-seedream-5-0-260128' }, 'seedream', true).model).toBe(DEFAULT_SEEDREAM_MODEL)
@@ -291,6 +293,18 @@ describe('subscription workbench profiles', () => {
     })
     const config = await describeStudio(studioCtx(), { provider: 'chatgpt-sub' }, manager)
     expect(config.activeProvider).toBe('chatgpt-sub')
+  })
+})
+
+describe('workbench configuration projection', () => {
+  it('exposes a trimmed tldraw license key to the browser workbench', async () => {
+    const config = await describeStudio(studioCtx(), { tldrawLicenseKey: '  tldraw-abc123  ' })
+    expect(config.tldrawLicenseKey).toBe('tldraw-abc123')
+  })
+
+  it('omits the tldraw license key when unset or blank', async () => {
+    expect(await describeStudio(studioCtx(), {})).not.toHaveProperty('tldrawLicenseKey')
+    expect(await describeStudio(studioCtx(), { tldrawLicenseKey: '   ' })).not.toHaveProperty('tldrawLicenseKey')
   })
 })
 
@@ -1668,6 +1682,23 @@ describe('workbench GIF output and originals', () => {
     return { ctx, fetch }
   }
   const bodyOf = (fetch: ReturnType<typeof vi.fn>, index = 0) => JSON.parse(String((fetch.mock.calls[index] as [unknown, RequestInit] | undefined)?.[1]?.body))
+
+  it('advertises GIF controls only for the relevant relay and operation', () => {
+    const config = { ...relay, openaiCompatSupportsGif: true }
+    expect(studioProfile(config, 'openai-compat', true)).toMatchObject({ supportsGif: true, supportsGifEditing: true })
+    expect(studioProfile({ ...relay, openaiCompatExtraBody: { output_format: 'gif' } }, 'openai-compat', true)).toMatchObject({ supportsGif: true, supportsGifEditing: false })
+    expect(studioProfile(relay, 'openai-compat', true).supportsGif).toBeFalsy()
+    expect(studioProfile({ ...config, openaiCompatBaseURL: 'https://api.openai.com/v1' }, 'openai-compat', true).supportsGif).toBeFalsy()
+    expect(studioProfile(config, 'openai', true).supportsGif).toBeFalsy()
+    expect(studioProfile({ ...config, openaiCompatEditFormat: 'modelscopeAsync' }, 'openai-compat', true).supportsGif).toBeFalsy()
+  })
+
+  it('keeps a still image returned by a GIF relay and flags it for the workbench', async () => {
+    const { ctx } = setup()
+    const result = await generateFromStudio(ctx, relay, { ...request, output: gif }, signal)
+    expect(result.gifReturnedStill).toBe(true)
+    expect(result.attachment).toBeDefined()
+  })
 
   it('parses the GIF output shape and rejects other formats or non-numeric frame parameters', () => {
     expect(parseStudioGenerateRequest({ ...request, output: gif })).toMatchObject({ output: gif })

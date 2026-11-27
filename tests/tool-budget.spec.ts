@@ -20,7 +20,7 @@ const size = (tool: { name: string; description: string; parameters: unknown }) 
 
 describe('model-facing size', () => {
   it('keeps every tool definition within budget', () => {
-    const budgets: Record<string, number> = { canvas: 900, generate_image: 2300, generate_images: 2300, edit_image: 3700, find_inspiration: 1400 }
+    const budgets: Record<string, number> = { canvas: 900, generate_image: 2300, generate_images: 2300, edit_image: 3700, decompose_image_layers: 1400, find_inspiration: 1400 }
     const tools = registeredTools()
     expect(tools.map(tool => tool.name).sort()).toEqual(Object.keys(budgets).sort())
     for (const tool of tools) expect(size(tool), tool.name).toBeLessThanOrEqual(budgets[tool.name]!)

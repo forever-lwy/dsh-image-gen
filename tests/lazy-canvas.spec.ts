@@ -1,8 +1,10 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { loadCanvasChunk, setCanvasChunkLoader, setCanvasStyleAnchor, type CanvasChunk } from '../src/client/tl/lazy-studio-canvas.js'
+import { StudioTlCanvas, loadCanvasChunk, setCanvasChunkLoader, setCanvasStyleAnchor, type CanvasChunk } from '../src/client/tl/lazy-studio-canvas.js'
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const clientDir = join(root, 'src', 'client')
@@ -70,6 +72,14 @@ describe('lazy infinite canvas', () => {
     expect(doc.head.children).toHaveLength(3)
     setCanvasStyleAnchor(null)
     expect(doc.head.children).toEqual([main, theme])
+  })
+
+  it('passes the configured license to the editor across the lazy chunk boundary', async () => {
+    const editor = vi.fn((_props: { lang?: 'zh' | 'en'; licenseKey?: string | undefined }) => null)
+    setCanvasChunkLoader(async () => ({ StudioTlCanvas: editor, TL_CSS: '' }))
+    await loadCanvasChunk()
+    renderToStaticMarkup(createElement(StudioTlCanvas, { lang: 'en', licenseKey: 'test-license' }))
+    expect(editor.mock.calls[0]?.[0]).toMatchObject({ lang: 'en', licenseKey: 'test-license' })
   })
 
   it('retries after a failed fetch instead of caching the failure', async () => {
