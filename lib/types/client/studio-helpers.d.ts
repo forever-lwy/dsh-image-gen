@@ -1,5 +1,6 @@
 import { type FC } from 'react';
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment';
+import { type StudioProviderProfile } from '../shared.js';
 import type { FavoriteFolder, GalleryItem } from './gallery-store.js';
 export declare const BatchCanvasItem: FC<{
     item: GalleryItem;
@@ -27,6 +28,16 @@ export declare function localizeRatioOptions(options: Array<{
     label: string;
 }>;
 export declare function localizeQualityOptions(options: Array<{
+    value: string;
+    label: string;
+}>, lang: 'zh' | 'en'): Array<{
+    value: string;
+    label: string;
+}>;
+/** The host labels Studio providers in Chinese; channel names the user typed pass through. */
+export declare function studioProfileLabel(profile: Pick<StudioProviderProfile, 'provider' | 'channel' | 'label'>, lang: 'zh' | 'en'): string;
+/** Re-localize the host's `standard · WxH` tier label; other tier labels are language-neutral. */
+export declare function localizeResolutionOptions(options: Array<{
     value: string;
     label: string;
 }>, lang: 'zh' | 'en'): Array<{

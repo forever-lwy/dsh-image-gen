@@ -8,6 +8,8 @@ export interface StudioRouteDeps {
     timeoutMs?: number;
     /** Whether the selected channel asks for a GIF by itself, so a request without `output` still gets the GIF timeout. */
     channelSelectsGif?(input: StudioGenerateRequest): boolean;
+    /** A channel that polls an async task (ModelScope, #140) and needs the long timeout. */
+    channelPollsTask?(input: StudioGenerateRequest): boolean;
     /** Heartbeat cadence for the streaming generation response; tests shrink it. */
     heartbeatMs?: number;
 }

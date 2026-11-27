@@ -1,6 +1,6 @@
 /** Independent size and quality controls for official and compatible image APIs. */
 import type { Config } from './config.js';
-import { type StudioOption } from './shared.js';
+import { type GifOutputRequest, type StudioOption } from './shared.js';
 export { compatGenerationExtraBody, compatWatermarkField, compatWatermarkOptions } from './watermark.js';
 export declare const PROVIDER_DEFAULT_QUALITY = "__default__";
 export declare const DEFAULT_COMPAT_QUALITIES: string[];
@@ -35,6 +35,8 @@ type GifRequestFields = {
 export declare function outputRequestFields(options: GifRequestOptions): OutputRequestFields;
 /** Fold one call's GIF parameters into OpenAI images request fields; anything but a GIF yields {}. */
 export declare function gifRequestFields(options: GifRequestOptions): GifRequestFields;
+/** Parse the optional workbench controls. Empty fields keep the relay defaults. */
+export declare function workbenchGifOutput(frames: string, duration: string): GifOutputRequest | undefined;
 /**
  * A GIF `size` is the single-frame size: auto or multiples of 16 with the
  * longest edge within the sheet limit. The still-image pixel floor of

@@ -3,6 +3,7 @@ import type { ImageAttachmentRef, ImageMediaType, StoredImageAttachment } from '
 import type { Context } from '@deepseek-ai/cordis'
 import {
   ASPECT_RATIOS,
+  hostOf,
   IMAGE_SIZES,
   resolveProvider,
   withOpenAICompatChannel,
@@ -39,12 +40,14 @@ import {
   type SubscriptionProvider,
 } from './shared.js'
 
-import { CLOUD_CAPABILITIES, cloudCapability, RATIO_LABELS, SUBSCRIPTION_CAPABILITIES } from './capabilities.js'
+import { CLOUD_CAPABILITIES, cloudCapability, SUBSCRIPTION_CAPABILITIES } from './capabilities.js'
+import { ratioLabel } from './ratio-labels.js'
+import { readGifInfo } from './gif-info.js'
 import { compatGenerationExtraBody, compatQualityOptions, compatRequestQuality, gifRequestFields, officialQualityOptions, officialSizeTable, validateGifFrameSize, validateOfficialSize, PROVIDER_DEFAULT_QUALITY } from './openai-output.js'
 import { keepGifOriginal } from './vault-registry.js'
 import { vaultConfigOf } from './vault-store.js'
 import { refreshProfileModels, widenProfileModels, withCachedChannelModels } from './channel-model-discovery.js'
-import { compatEditExtraBody, selectedWatermark, watermarkProfile } from './watermark.js'
+import { compatEditExtraBody, compatEditFormat, selectedWatermark, watermarkProfile } from './watermark.js'
 
 const LEGACY_OPENAI_TABLE: Record<string, Record<string, string>> = {
   '1:1': { '1K': '1024x1024' },
@@ -180,7 +183,7 @@ function configuredCompatSize(config: Config, input: Pick<StudioGenerateRequest,
 /** Workbench profile derived from the configured relay table. */
 function openAICompatStudioProfile(config: Config, model: string, configured: boolean): StudioProviderProfile {
   const groups = openAICompatTable(config)
-  const ratioOptions = groups.map(group => ({ value: group.ratio, label: RATIO_LABELS[group.ratio] ?? group.ratio }))
+  const ratioOptions = groups.map(group => ({ value: group.ratio, label: ratioLabel(group.ratio, 'zh') }))
   const tierMap = new Map<string, StudioOption>()
   for (const group of groups) for (const entry of group.tiers) tierMap.set(entry.tier, { value: entry.tier, label: entry.tier })
   const qualityOptions = [...tierMap.values()].sort((a, b) => (tierRank(a.value) || 0) - (tierRank(b.value) || 0))
@@ -254,11 +257,13 @@ export async function describeStudio(
     ? profiles.find(profile => profile.provider === activeProvider && profile.channel === resolveOpenAICompatChannel(config).id)?.channel
       ?? profiles.find(profile => profile.provider === activeProvider)?.channel
     : undefined
+  const tldrawLicenseKey = config.tldrawLicenseKey?.trim() ?? ''
   return {
     providers: profiles,
     activeProvider,
     ...(activeChannel === undefined ? {} : { activeChannel }),
     ...(modelDiscoveryPending ? { modelDiscoveryPending } : {}),
+    ...(tldrawLicenseKey.length === 0 ? {} : { tldrawLicenseKey }),
   }
 }
 
@@ -290,6 +295,11 @@ const SUBSCRIPTION_DISPLAY_LABELS: Record<SubscriptionProvider, string> = {
   'chatgpt-sub': 'ChatGPT 订阅',
   'grok-sub': 'Grok 订阅',
   'google-sub': 'Google 订阅',
+}
+
+/** A channel on ModelScope's async task flow (#140) polls for minutes, so it gets the long timeout like a GIF. */
+export function channelPollsTask(config: Config, input: Pick<StudioGenerateRequest, 'provider' | 'channel'>): boolean {
+  return input.provider === 'openai-compat' && compatEditFormat(withOpenAICompatChannel(config, input.channel)) === 'modelscopeAsync'
 }
 
 /** A generation on an OpenAI-compatible channel whose extras select GIF is a GIF request even when it carries no `output`. */
@@ -392,7 +402,8 @@ export async function generateFromStudio(
       if (extraBody?.output_format === 'svg') throw new Error('该渠道默认输出 SVG；工作台仅支持位图，请更换渠道或调整渠道输出格式')
       generated = rasterOnly(input.mode === 'edit'
         ? await editOpenAICompatibleImage({ strictImageDownloads: requestConfig.strictImageDownloads === true, apiKey: credential, baseURL: wired.baseURL, model: wired.model, prompt: input.prompt, sourceImages, ...(size === undefined ? {} : { size }), maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, ...(quality === undefined ? {} : { quality }), ...(extraBody === undefined ? {} : { extraBody }), ...(p === 'openai-compat' ? { editFormat: wired.editFormat, editExtra: wired.editExtra, editSizeMode: requestConfig.openaiCompatEditSizeMode ?? 'auto' } : p === 'xai' ? { editFormat: 'xaiJson' as const } : {}) })
-        : await generateOpenAICompatibleImage({ strictImageDownloads: requestConfig.strictImageDownloads === true, provider: p, apiKey: credential, baseURL: wired.baseURL, model: wired.model, prompt: input.prompt, ...(size === undefined ? {} : { size }), maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, ...(quality === undefined ? {} : { quality }), ...(extraBody === undefined ? {} : { extraBody }) }))
+        : await generateOpenAICompatibleImage({ strictImageDownloads: requestConfig.strictImageDownloads === true, provider: p, apiKey: credential, baseURL: wired.baseURL, model: wired.model, prompt: input.prompt, ...(size === undefined ? {} : { size }), maxBytes: ctx.attachments.imageLimits.maxImageBytes, signal, ...(quality === undefined ? {} : { quality }), ...(extraBody === undefined ? {} : { extraBody }), // The ModelScope async format also switches generation to the task flow (#140).
+          ...(p === 'openai-compat' && wired.editFormat === 'modelscopeAsync' ? { asyncImages: true } : {}) }))
       output = size ?? `${input.ratio}, ${input.quality}`
     } else if (wired.provider === 'seedream') {
       const size = cloudCapability('seedream', wired.model).sizeFor?.(input.ratio, input.quality) ?? input.quality
@@ -430,6 +441,7 @@ export async function generateFromStudio(
     return {
       attachment,
       output,
+      ...((input.output?.format === 'gif' || channelGif) && (readGifInfo(generated.data)?.frames ?? 0) < 2 ? { gifReturnedStill: true } : {}),
       ...(original === undefined ? {} : { original }),
     }
   }
@@ -439,6 +451,7 @@ export async function generateFromStudio(
     return {
       attachment: single.attachment,
       output: single.output,
+      ...(single.gifReturnedStill ? { gifReturnedStill: true } : {}),
       provider: input.provider,
       ...(channel === undefined ? {} : { channel: channel.id }),
       model,
@@ -643,11 +656,17 @@ export function studioProfile(config: Config, provider: CloudImageProvider, conf
   const channel = provider === 'openai-compat' && channelId !== undefined ? resolveOpenAICompatChannel(config, channelId) : undefined
   const scoped = channel === undefined ? config : withOpenAICompatChannel(config, channel.id)
   const result = cloudStudioProfile(scoped, provider, configured)
+  const gifEditFormat = provider === 'openai-compat' && hostOf(scoped.openaiCompatBaseURL ?? '') !== 'api.openai.com'
+    ? compatEditFormat(scoped) : undefined
   const editModel = provider === 'openai-compat' ? scoped.openaiCompatEditModel?.trim() : undefined
   return {
     ...result,
     ...(channel === undefined ? {} : { channel: channel.id, label: channel.label }),
     ...(editModel ? { editModel } : {}),
+    ...(gifEditFormat !== undefined && gifEditFormat !== 'modelscopeAsync' ? {
+      supportsGif: scoped.openaiCompatSupportsGif === true || scoped.openaiCompatExtraBody?.output_format === 'gif',
+      supportsGifEditing: scoped.openaiCompatSupportsGif === true && gifEditFormat === 'multipart',
+    } : {}),
     ...watermarkProfile(scoped, provider, result.model),
   }
 }
@@ -740,7 +759,7 @@ const CLOUD_DISPLAY_LABELS: Record<CloudImageProvider, string> = {
 }
 
 function option(value: string): StudioOption {
-  return { value, label: RATIO_LABELS[value] ?? value }
+  return { value, label: ratioLabel(value, 'zh') }
 }
 
 /**

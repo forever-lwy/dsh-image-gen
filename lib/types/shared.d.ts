@@ -1,7 +1,7 @@
 /** Values shared by the Host and browser Bundle faces. */
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment';
 /** Browser route used by the generated-image card. */
-export declare const IMAGE_ROUTE = "/plugins/dsh-image-gen/image";
+export declare const IMAGE_ROUTE: string;
 /** Encode a durable image reference for the cacheable GET form of IMAGE_ROUTE. */
 export declare function encodeImageRef(ref: ImageAttachmentRef): string;
 /** Decode a GET query value; the caller supplies the reference parser. */
@@ -17,40 +17,40 @@ export declare const VAULT_KEY_PATTERN: RegExp;
 /** Content-addressed raw copy, served when the attachment layer normalized an import or a generated GIF. */
 export declare function vaultUrlFor(key: string, mediaType?: string): string;
 /** Browser route that uploads user-picked images as DSH attachments. */
-export declare const IMPORT_ROUTE = "/plugins/dsh-image-gen/import";
+export declare const IMPORT_ROUTE: string;
 /** Browser route used for deleting generated images and workspace files. */
-export declare const DELETE_ROUTE = "/plugins/dsh-image-gen/delete";
+export declare const DELETE_ROUTE: string;
 /** Same-origin route used by the browser image workbench. */
-export declare const STUDIO_ROUTE = "/plugins/dsh-image-gen/studio";
+export declare const STUDIO_ROUTE: string;
 /** Same-origin route for built-in prompt inspiration metadata and images. */
-export declare const INSPIRATION_ROUTE = "/plugins/dsh-image-gen/inspiration";
+export declare const INSPIRATION_ROUTE: string;
 /** Browser route used for saving generated images to workspace on demand. */
-export declare const SAVE_WORKSPACE_ROUTE = "/plugins/dsh-image-gen/save-workspace";
+export declare const SAVE_WORKSPACE_ROUTE: string;
 /** Browser route that streams a ZIP export of the selected gallery images. */
-export declare const ZIP_ROUTE = "/plugins/dsh-image-gen/zip";
+export declare const ZIP_ROUTE: string;
 /** Browser route that serves host-rendered gallery thumbnails. */
-export declare const THUMB_ROUTE = "/plugins/dsh-image-gen/thumb";
-export declare const PREVIEW_ROUTE = "/plugins/dsh-image-gen/preview";
-export declare const VAULT_ROUTE = "/plugins/dsh-image-gen/vault";
-export declare const VAULT_REFS_ROUTE = "/plugins/dsh-image-gen/vault-refs";
-export declare const VAULT_DELETE_ROUTE = "/plugins/dsh-image-gen/vault-delete";
-export declare const ZIP_PROGRESS_ROUTE = "/plugins/dsh-image-gen/zip/progress";
-export declare const ZIP_CANCEL_ROUTE = "/plugins/dsh-image-gen/zip/cancel";
-export declare const STORAGE_STATS_ROUTE = "/plugins/dsh-image-gen/storage-stats";
+export declare const THUMB_ROUTE: string;
+export declare const PREVIEW_ROUTE: string;
+export declare const VAULT_ROUTE: string;
+export declare const VAULT_REFS_ROUTE: string;
+export declare const VAULT_DELETE_ROUTE: string;
+export declare const ZIP_PROGRESS_ROUTE: string;
+export declare const ZIP_CANCEL_ROUTE: string;
+export declare const STORAGE_STATS_ROUTE: string;
 /** Browser route the settings card probes provider connectivity through. */
-export declare const TEST_CONNECTION_ROUTE = "/plugins/dsh-image-gen/test";
+export declare const TEST_CONNECTION_ROUTE: string;
 /** Non-secret settings capability probe, available even when the host cannot serve a form. */
-export declare const SETTINGS_HEALTH_ROUTE = "/plugins/dsh-image-gen/settings-health";
+export declare const SETTINGS_HEALTH_ROUTE: string;
 export interface SettingsHealth {
     settings: 'unavailable' | 'legacy' | 'live';
     liveSchema: boolean;
 }
 /** Browser route the workbench infinite canvas pushes live state through. */
-export declare const CANVAS_STATE_ROUTE = "/plugins/dsh-image-gen/canvas-state";
+export declare const CANVAS_STATE_ROUTE: string;
 /** Upload a selected canvas original to the host attachment store. */
-export declare const CANVAS_ASSET_ROUTE = "/plugins/dsh-image-gen/canvas-asset";
-export declare const SUBSCRIPTION_LOGIN_ROUTE = "/plugins/dsh-image-gen/subscription-login";
-export declare const SUBSCRIPTION_STATUS_ROUTE = "/plugins/dsh-image-gen/subscription-status";
+export declare const CANVAS_ASSET_ROUTE: string;
+export declare const SUBSCRIPTION_LOGIN_ROUTE: string;
+export declare const SUBSCRIPTION_STATUS_ROUTE: string;
 /** Coarse model-facing kind of one shape on the workbench infinite canvas. */
 export type CanvasNodeKind = 'image' | 'draw' | 'text' | 'note' | 'geo' | 'arrow' | 'frame' | 'other';
 /** Every accepted canvas node kind, for validating untrusted pushes. */
@@ -180,11 +180,13 @@ export interface OpenAICompatChannel {
     model: string;
     models?: string[];
     editModel?: string;
+    supportsGif?: boolean;
     quality?: string;
     qualityOptions?: string[];
     extraBody?: Record<string, unknown>;
     editSizeMode?: 'auto' | 'selected';
-    editFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson';
+    /** `modelscopeAsync` also switches generation to the async task flow (#140). */
+    editFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson' | 'modelscopeAsync';
     editExtra?: Record<string, unknown>;
     sizes?: Record<string, Record<string, string>>;
 }
@@ -193,12 +195,13 @@ export interface OpenAICompatChannelSource {
     openaiCompatBaseURL?: string;
     openaiCompatModel?: string;
     openaiCompatModels?: readonly string[];
+    openaiCompatSupportsGif?: boolean;
     openaiCompatEditModel?: string;
     openaiCompatQuality?: string;
     openaiCompatQualityOptions?: readonly string[];
     openaiCompatExtraBody?: Record<string, unknown>;
     openaiCompatEditSizeMode?: 'auto' | 'selected';
-    openaiCompatEditFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson';
+    openaiCompatEditFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson' | 'modelscopeAsync';
     openaiCompatEditExtra?: Record<string, unknown>;
     openaiCompatSizes?: Record<string, Record<string, string>>;
     openaiCompatChannels?: readonly OpenAICompatChannel[];
@@ -263,6 +266,10 @@ export declare const CLOUD_CREDENTIAL_REFS: Record<CloudImageProvider, string>;
 export declare function cloudCredentialRef(provider: ImageProvider): string | undefined;
 /** Locale-neutral provider names for user-facing errors and status lines. */
 export declare const PROVIDER_DISPLAY_NAMES: Record<ImageProvider, string>;
+/** English provider names for English UI and English messages. */
+export declare const PROVIDER_ENGLISH_NAMES: Record<ImageProvider, string>;
+/** Default channel names are generated in Chinese; show them in the UI language. Names the user typed pass through. */
+export declare function localizeChannelLabel(label: string, lang: 'zh' | 'en'): string;
 /** Display names for the subscription providers, separate from the BYOK table. */
 export declare const SUBSCRIPTION_PROVIDER_DISPLAY_NAMES: Record<SubscriptionProvider, string>;
 /** One selectable output option exposed by a provider profile. */
@@ -285,6 +292,8 @@ export interface StudioProviderProfile {
     model: string;
     /** Separate configured edit model; absent preserves the generation model. */
     editModel?: string;
+    supportsGif?: boolean;
+    supportsGifEditing?: boolean;
     /** Selectable generation models; absent means the single default model. */
     modelOptions?: StudioOption[];
     configured: boolean;
@@ -322,6 +331,8 @@ export interface StudioConfigResponse {
     modelDiscoveryPending?: boolean;
     workspaceRoot?: string | undefined;
     workspaces?: StudioWorkspaceInfo[] | undefined;
+    /** Public tldraw SDK license key for the infinite canvas; absent when unset. */
+    tldrawLicenseKey?: string | undefined;
 }
 /** A browser-uploaded reference image used for one editing request. */
 export interface StudioEncodedReference {
@@ -364,6 +375,7 @@ export interface StudioGenerateRequest {
 }
 /** One individual generated image item in a workbench batch. */
 export interface StudioGeneratedItem {
+    gifReturnedStill?: boolean;
     attachment: ImageAttachmentRef;
     output: string;
     savedTo?: string | undefined;
@@ -419,27 +431,29 @@ export interface ArkOutputOptions {
     outputFormat?: ArkOutputFormat;
     /** `watermark`. Ark defaults to `true`, which bakes an "AI generated" mark into the image. */
     watermark?: boolean;
-    /** `background`. Ark defaults to `opaque`. */
+    /** `background`. Ark defaults to `opaque`, or `auto` on Seedream 5.5. */
     background?: ArkBackgroundMode;
 }
 /**
  * Map the Ark output controls onto request-body fields.
  *
- * `background` is opt-in per call site because Ark restricts `transparent` to
- * image-to-image with a single alpha-bearing reference and rejects the whole
- * request otherwise:
+ * `background` is opt-in per call site because text-to-image transparency
+ * depends on the model. Seedream 5.5 accepts it; 5.0 pro / flash restrict
+ * `transparent` to image-to-image with a single alpha-bearing reference and
+ * reject the whole request otherwise:
  *
  *   text-to-image + transparent → 400 InvalidParameter
  *     "transparent background requires exactly one input image"
  *
- * So the generation endpoint must never carry it, and that caller passes
- * `{ background: false }`. `background: opaque` is never emitted anywhere: it
- * is already Ark's default, so sending it would change nothing while adding a
- * field only the edit path can act on.
+ * The generation caller enables it via `seedreamGeneratesTransparent`.
+ * Seedream 5.5 needs an explicit opaque selection because Ark defaults to auto.
  */
-export declare function arkOutputBody(options: ArkOutputOptions | undefined, { background }?: {
+export declare function arkOutputBody(options: ArkOutputOptions | undefined, { background, explicitOpaque }?: {
     background?: boolean;
+    explicitOpaque?: boolean;
 }): Record<string, unknown>;
+/** Whether text-to-image accepts `background: transparent`: Seedream 5.5 only. */
+export declare function seedreamGeneratesTransparent(model: string): boolean;
 /** Default model names. */
 export declare const DEFAULT_GOOGLE_MODEL = "gemini-3.1-flash-image";
 export declare const DEFAULT_OPENAI_MODEL = "gpt-image-2.6-flare";

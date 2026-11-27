@@ -32,19 +32,19 @@ try {
   await writeFile(join(home, 'package.json'), JSON.stringify({
     name: 'image-gen-package-verification', private: true, type: 'module', dependencies: {
       [manifest.name]: `file:${tarball.replaceAll('\\', '/')}`,
-      '@deepseek-ai/dsh': '0.2.2-rc.3',
+      '@deepseek-ai/dsh': '0.2.2-rc.5',
       '@deepseek-ai/cordis': '4.1.0',
       '@deepseek-ai/cordis-plugin-group': '1.1.0',
       '@deepseek-ai/schemastery': '3.19.0',
-      '@deepseek-ai/dsh-app-boot': '0.2.2-rc.3',
-      '@deepseek-ai/dsh-config-editor': '0.2.2-rc.3',
-      '@deepseek-ai/dsh-settings': '0.2.2-rc.3',
+      '@deepseek-ai/dsh-app-boot': '0.2.2-rc.5',
+      '@deepseek-ai/dsh-config-editor': '0.2.2-rc.5',
+      '@deepseek-ai/dsh-settings': '0.2.2-rc.5',
       'schemastery-legacy': 'npm:@deepseek-ai/schemastery@3.18.2',
       react: '18.3.1',
       'react-test-renderer': '18.3.1',
     },
   }, null, 2))
-  console.log('Installing the tarball with published DSH 0.2.2-rc.3 services...')
+  console.log('Installing the tarball with published DSH 0.2.2-rc.5 services...')
   await copyFile(join(root, 'pnpm-workspace.yaml'), join(home, 'pnpm-workspace.yaml'))
   execFileSync(process.execPath, [npm, 'exec', '--yes', '--package', 'pnpm@11.28.5', '--', 'pnpm', 'install', '--ignore-scripts', '--config.node-linker=hoisted', '--config.auto-install-peers=false'], {
     cwd: home, stdio: 'inherit', timeout: 180_000,

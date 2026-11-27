@@ -28,14 +28,15 @@ interface ImageSettings {
     openaiCompatModels?: string[];
     openaiCompatChannels?: OpenAICompatChannel[];
     openaiCompatActiveChannel?: string;
+    openaiCompatSupportsGif?: boolean;
     openaiCompatEditModel?: string;
     openaiCompatSizes?: Record<string, Record<string, string>>;
     openaiCompatQuality?: string;
     openaiCompatQualityOptions?: string[];
     openaiCompatExtraBody?: Record<string, unknown>;
     openaiCompatEditSizeMode?: 'auto' | 'selected';
-    /** Edit-request shape for the openai-compat relay (#41); see src/config.ts. */
-    openaiCompatEditFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson';
+    /** Edit-request shape for the openai-compat relay (#41); see src/config.ts. `modelscopeAsync` also switches generation to the async task flow (#140). */
+    openaiCompatEditFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson' | 'modelscopeAsync';
     /** Extra JSON fields merged into the JSON edit body; ignored in multipart mode. */
     openaiCompatEditExtra?: Record<string, unknown>;
     seedreamBaseURL?: string;
@@ -44,7 +45,7 @@ interface ImageSettings {
     seedreamOutputFormat?: 'png' | 'jpeg';
     /** Ark `watermark`; off removes the baked-in "AI generated" mark. */
     seedreamWatermark?: boolean;
-    /** Ark `background`; `transparent` needs an alpha-bearing edit reference. */
+    /** Ark `background`; before Seedream 5.5 `transparent` needs an alpha-bearing edit reference. */
     seedreamBackground?: 'opaque' | 'transparent';
     dashscopeEndpoint?: string;
     dashscopeModel?: string;
@@ -61,6 +62,7 @@ interface ImageSettings {
     saveToWorkspace?: boolean;
     workspaceFolder?: string;
     showProviderPill?: boolean;
+    tldrawLicenseKey?: string;
 }
 interface CredentialInfo {
     configured?: boolean;

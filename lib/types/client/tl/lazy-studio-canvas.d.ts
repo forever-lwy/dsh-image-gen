@@ -12,6 +12,7 @@ import { type FC } from 'react';
  */
 type CanvasProps = {
     lang?: 'zh' | 'en';
+    licenseKey?: string | undefined;
 };
 export interface CanvasChunk {
     StudioTlCanvas: FC<CanvasProps>;

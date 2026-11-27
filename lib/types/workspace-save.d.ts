@@ -31,6 +31,8 @@ export declare function workspaceImageName(attachmentId: string, mediaType: Save
  * @throws when the folder would escape the workspace root.
  */
 export declare function workspaceImageDir(workspaceRoot: string, folder: string | undefined): string;
+/** Create an output directory after validating both its existing ancestor and final real path. */
+export declare function prepareWorkspaceImageDir(workspaceRoot: string, folder?: string): Promise<string>;
 /**
  * Write one generated image durably under the session workspace.
  *

@@ -23,6 +23,14 @@
 > 火山方舟于 2026-11-24 下线 `doubao-seedream-5-0-260128`（插件原默认）、`doubao-seedream-5-0-lite-260128` 与 `doubao-seedream-4-5-251128`；设置里保存的这些型号会自动改用 `doubao-seedream-5-0-pro-260628`，清晰度相应变为 1K / 1.5K / 2K。
 
 
+## Seedream 图层拆分
+
+在已打开的工作区上传一张 PNG 或 JPEG，或指定工作区内的图片，然后说「用 Seedream 把这张图拆成图层」。插件会返回保存目录，里面有底图 `base.png`、各层 PNG 和记录堆叠顺序与坐标的 `manifest.json`。源图至少需要 262144 像素。支持 Seedream 5.0 pro、5.0 flash 和 5.5，使用 5.5 时还可以要求最多输出多少张图，包含底图。个别图层下载失败时，其余图层照常保存，失败的图层连同原因和 24 小时内有效的下载链接记在 `manifest.json` 的 `missing` 里。
+
+## 画廊工作台生成 GIF
+
+在支持动图的 OpenAI 兼容渠道设置里勾选「此渠道支持生成 GIF 动图」并保存。在工作台选择该渠道，勾选「自定义 GIF 动图」，即可填写帧数和每帧时长。两个输入框都可留空，沿用渠道参数。动图每次生成一段，使用多部分表单编辑接口时可以带一张参考图。
+
 ## 各 Provider 可选比例与清晰度
 
 | Provider           | 比例                                                              | 清晰度                                  |
@@ -30,7 +38,7 @@
 | Google Gemini      | 1:1 · 3:2 · 2:3 · 4:3 · 3:4 · 4:5 · 5:4 · 16:9 · 9:16 · 21:9      | 1K / 2K / 4K                            |
 | OpenAI Images      | gpt-image-2 系列支持 1:1 · 3:2 · 2:3 · 4:3 · 3:4 · 16:9 · 9:16 | 分辨率 1K / 2K（宽屏、竖屏另有 4K）；生成质量独立选择 auto / low / medium / high |
 | OpenAI Compatible  | 由 `openaiCompatSizes` 配置决定（默认 1:1 · 3:2 · 2:3）           | 分辨率由尺寸表决定；生成质量独立配置，默认不发送 |
-| ByteDance Seedream | 自动 · 1:1 · 3:2 · 2:3 · 4:3 · 3:4 · 16:9 · 9:16 · 21:9           | 5.0 pro / flash：1K / 1.5K / 2K；更早的模型：2K / 3K / 4K |
+| ByteDance Seedream | 自动 · 1:1 · 3:2 · 2:3 · 4:3 · 3:4 · 16:9 · 9:16 · 21:9           | 5.5、5.0 pro / flash：1K / 1.5K / 2K；更早的模型：2K / 3K / 4K |
 | Aliyun DashScope   | 1:1 · 3:2 · 2:3 · 4:3 · 3:4 · 16:9 · 9:16                         | 标准                                    |
 | xAI Grok Imagine   | 自动 · 1:1 · 3:2 · 2:3 · 4:3 · 3:4 · 16:9 · 9:16 · 21:9           | 1K / 2K                                 |
 | 智谱 GLM-Image     | 1:1 · 3:2 · 2:3 · 4:3 · 3:4 · 16:9 · 9:16                         | 高清                                    |
@@ -46,7 +54,8 @@
 > OpenAI Compatible 的尺寸表为 `openaiCompatSizes`，格式相同；留空时保持原来的标准尺寸。`openaiCompatQuality` 设置默认生成质量（留空不发送），`openaiCompatQualityOptions` 设置 Studio 可选值。选择「渠道默认（不发送）」可在单次请求中省略 quality；对话工具也支持独立的 `size` 和 `quality` 参数。
 > 对话**文生图**还可用 `output_format: "svg"` 请求矢量结果（仅 OpenAI 与兼容渠道；图生图接口不支持 SVG）。DSH 附件层只接受 png/jpeg/webp/gif，SVG 因此写入工作区的 `.svg` 文件、把源码放进工具结果，并由对话卡片直接按源码渲染（图库与版本历史仍只收录位图）；矢量图没有像素尺寸，`size` / `aspect_ratio` / `image_size` 不会发送，`frame_count` / `frame_duration_ms` 与 SVG 同时出现会报错。
 >
-> 兼容渠道的「文生图额外字段」对应 `openaiCompatExtraBody`，例如 `{ "watermark": false }`。它仅用于文生图，在常规字段之后合并，可覆盖同名参数；`false` 和嵌套对象都会保留。单次对话调用也可用 `output_format` / `frame_count` / `frame_duration_ms` 参数覆盖这里的同名字段。GIF 结果在卡片或图库里「重新生成」时仍请求 GIF，并沿用原来的帧数、帧时长与单帧尺寸；工作台里由这里的 `output_format: gif` 出图时，只有配置了 `openaiCompatSizes` 尺寸表才发送所选 `size`，否则不发送尺寸、由服务端决定。图生图继续使用 `openaiCompatEditExtra`；JSON 图片 URL 数组格式的 `openaiCompatEditSizeMode` 默认 `auto`，改为 `selected` 才发送所选尺寸，EditExtra 仍可覆盖该尺寸。按帧编辑发出的图生图请求把所有帧拼成一张参考拼图作唯一参考图：单帧尺寸作为 `size` 发送，`output_format: gif`、帧数与帧时长在常规字段之后合并；渠道的图生图接口需接受这些 GIF 输出参数（默认的多部分表单即 `images/edits`）。
+> 兼容渠道的「文生图额外字段」对应 `openaiCompatExtraBody`，例如 `{ "watermark": false }`。它仅用于文生图，在常规字段之后合并，可覆盖同名参数；`false` 和嵌套对象都会保留。单次对话调用（`generate_image` / `generate_images` / `edit_image`）也可用 `output_format` / `frame_count` / `frame_duration_ms` / `background` 参数覆盖对应额外字段里的同名值；`background` 取 `auto` / `opaque` / `transparent`，仅 OpenAI 与兼容渠道支持，透明结果需要上游模型返回带 alpha 的 PNG。GIF 结果在卡片或图库里「重新生成」时仍请求 GIF，并沿用原来的帧数、帧时长与单帧尺寸；工作台里由这里的 `output_format: gif` 出图时，只有配置了 `openaiCompatSizes` 尺寸表才发送所选 `size`，否则不发送尺寸、由服务端决定。图生图继续使用 `openaiCompatEditExtra`；JSON 图片 URL 数组格式的 `openaiCompatEditSizeMode` 默认 `auto`，改为 `selected` 才发送所选尺寸，EditExtra 仍可覆盖该尺寸。按帧编辑发出的图生图请求把所有帧拼成一张参考拼图作唯一参考图：单帧尺寸作为 `size` 发送，`output_format: gif`、帧数与帧时长在常规字段之后合并；渠道的图生图接口需接受这些 GIF 输出参数（默认的多部分表单即 `images/edits`）。
 > 兼容渠道可设置独立的「图生图模型」`openaiCompatEditModel`，留空沿用文生图模型；对话中的显式 `model` 仍可覆盖单次编辑。硅基流动官方 `/v1` 地址自动使用 `siliconflowJson` 编辑格式，其他采用同一协议的中转可手动选择：通过 `/images/generations` 发送 `image` 字符串。`Qwen/Qwen-Image-Edit` 支持一张参考图，`Qwen/Qwen-Image-Edit-2509` 最多三张，依次使用 `image`、`image2`、`image3`。编辑不发送通用尺寸和质量字段；图生图额外字段中的 `size`、`image_size`、`quality` 会给出明确错误，图片字段由插件填入。协议以[硅基流动官方文档](https://docs.siliconflow.cn/docs/api/images-generations-post)为准。
+> 接口地址填魔搭 [ModelScope API-Inference](https://modelscope.ai/docs/model-service/API-Inference/intro) 官方地址 `https://api-inference.modelscope.cn/v1`（如模型 `MiniMax/MiniMax-H3-Image`）时自动识别，无需额外设置。魔搭只以异步任务出图：插件带 `X-ModelScope-Async-Mode: true` 提交 `POST /images/generations`，再每 5 秒轮询 `GET /v1/tasks/{task_id}`（带 `X-ModelScope-Task-Type: image_generation`），最长 300 秒，任务 `SUCCEED` 后下载 `output_images` 第一张。「云端超时」保持默认时，魔搭渠道自动放宽到 300 秒；手动设置的超时照常生效。图生图把参考图转成 data URL 放进 `image_url` 数组提交到同一端点；文生图发送 `size`、不发送 `quality`，图生图两者都不发送，图生图额外字段中的 `size`、`image_size`、`quality` 会给出明确错误。其他地址的同步生成或 JSON 图生图若直接收到 `{task_id, task_status}` 任务信封，也会自动转入同一轮询流程；该回退只作用于本会报「未返回图片」错误的响应。
 > 普通对话生图无需指定 provider 或 model，会使用已保存的默认渠道；模型可读取随配置更新的默认渠道及参数提示。无关可选字段应省略，空白尺寸会按未提供处理；两个有效的 `size` / `aspect_ratio` 仍互斥。ChatGPT 订阅不支持 `image_size`，请使用 `size` 或 `aspect_ratio`，不要填入 `1K` 等档位。
 > 工作台在比例、分辨率旁提供「可见水印：渠道默认 / 关闭 / 开启」，分别判断文生图和图生图支持情况。Seedream、通义原生 Qwen Image，以及已确认的商汤和通义官方兼容接口自动启用；官方兼容接口同时自动使用对应的 JSON 编辑格式。商汤匹配 `https://token.sensenova.cn/v1` 与 `sensenova-u1.5-lite`；通义匹配官方工作空间域名的 `/compatible-mode/v1` 与 Qwen Image 3.0/3.0 Pro、2.1 Pro/Turbo。其他兼容渠道可通过对应操作的额外字段绑定布尔值 `watermark`、`watermark_enabled` 或 `parameters.watermark`；图生图绑定仅用于 JSON 编辑格式。未知渠道和智谱显示禁用的「支持未确认」，无已确认开关的接口也显示说明。不会仅凭模型名识别未知中转。渠道默认保留原配置或省略参数，单次选择只覆盖水印字段；批量生成、支持该操作的对比模型及再次生成会保留选择。

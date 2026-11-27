@@ -26,8 +26,6 @@
  *   standard/HD → default/4K).
  */
 import type { CloudImageProvider, StudioOption, SubscriptionProvider } from './shared.js';
-/** zh labels shared by the server-side profiles; the client re-localizes. */
-export declare const RATIO_LABELS: Record<string, string>;
 export interface ProviderCapability {
     ratioOptions: StudioOption[];
     qualityOptions: StudioOption[];

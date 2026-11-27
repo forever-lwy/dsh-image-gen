@@ -60,6 +60,8 @@ export declare function chatToolSize(input: {
 }): string | undefined;
 /** Return only browser-safe capability data. */
 export declare function describeStudio(ctx: Context, config: Config, subscriptions?: SubscriptionManager | undefined): Promise<StudioConfigResponse>;
+/** A channel on ModelScope's async task flow (#140) polls for minutes, so it gets the long timeout like a GIF. */
+export declare function channelPollsTask(config: Config, input: Pick<StudioGenerateRequest, 'provider' | 'channel'>): boolean;
 /** A generation on an OpenAI-compatible channel whose extras select GIF is a GIF request even when it carries no `output`. */
 export declare function channelSelectsGif(config: Config, input: Pick<StudioGenerateRequest, 'provider' | 'mode' | 'channel'>): boolean;
 /** Execute one validated browser workbench request using the existing provider adapters. */

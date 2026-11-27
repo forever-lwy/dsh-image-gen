@@ -15,7 +15,7 @@ import * as registry from './studio-tl-registry.js'
  * modules to this object instead of bundling second copies.
  */
 
-type CanvasProps = { lang?: 'zh' | 'en' }
+type CanvasProps = { lang?: 'zh' | 'en'; licenseKey?: string | undefined }
 export interface CanvasChunk {
   StudioTlCanvas: FC<CanvasProps>
   TL_CSS: string
@@ -87,7 +87,7 @@ export function loadCanvasChunk(): Promise<CanvasChunk> {
   return pending
 }
 
-export const StudioTlCanvas: FC<CanvasProps> = memo(function LazyStudioTlCanvas({ lang = 'zh' }) {
+export const StudioTlCanvas: FC<CanvasProps> = memo(function LazyStudioTlCanvas({ lang = 'zh', licenseKey }) {
   const [chunk, setChunk] = useState<CanvasChunk | undefined>(loaded)
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
@@ -104,7 +104,7 @@ export const StudioTlCanvas: FC<CanvasProps> = memo(function LazyStudioTlCanvas(
     )
     return () => { live = false }
   }, [chunk, attempt])
-  if (chunk !== undefined) return <chunk.StudioTlCanvas lang={lang} />
+  if (chunk !== undefined) return <chunk.StudioTlCanvas lang={lang} licenseKey={licenseKey} />
   const en = lang === 'en'
   return (
     <div className="dsh-ig-tl-canvas">

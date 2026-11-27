@@ -15,15 +15,17 @@
 <p>
   <a href="https://www.npmjs.com/package/dsh-image-gen"><img src="https://img.shields.io/npm/v/dsh-image-gen?style=flat-square&color=4f6ef7" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/dsh-image-gen"><img src="https://img.shields.io/npm/dm/dsh-image-gen?style=flat-square&color=10b981" alt="npm downloads" /></a>
-  <a href="https://github.com/shanliuling/dsh-image-gen/actions/workflows/ci.yml"><img src="https://github.com/shanliuling/dsh-image-gen/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://dsh-insights.com/p/shanliuling/dsh-image-gen"><img src="https://dsh-insights.com/badge/shanliuling/dsh-image-gen.svg" alt="DSH Insights health" /></a>
+  <a href="https://trendoday.com/github/repo/shanliuling/dsh-image-gen"><img src="https://trendoday.com/badge/github/repo/shanliuling/dsh-image-gen.svg?style=flat" alt="Trendoday · GitHub Trending TypeScript daily rank #8" /></a>
+  <a href="https://dshmarket.com/categories/workflow/"><img src="https://img.shields.io/badge/DSH%20Market-Workflow%20downloads%20%232-A45023?style=flat-square" alt="DSH Market Workflow category download rank #2" /></a>
   <a href="https://github.com/shanliuling/dsh-image-gen/stargazers"><img src="https://img.shields.io/github/stars/shanliuling/dsh-image-gen?style=flat-square" alt="GitHub stars" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-f5c542?style=flat-square" alt="License: Apache-2.0" /></a>
   <a href="https://linux.do/"><img src="https://img.shields.io/badge/LINUX%20DO-Community-555?style=flat-square" alt="LINUX DO" /></a>
 </p>
 
 <p>
-  <a href="https://atomgit.com/shanliuling/dsh-image-gen"><img src="https://atomgit.com/shanliuling/dsh-image-gen/star/new_badge.svg" alt="AtomGit" height="55" /></a>
+  <a href="https://trendshift.io/repositories/167406"><img src="https://trendshift.io/api/badge/repositories/167406" alt="GitHub Trending TypeScript daily rank #8 · Trendshift" width="182" height="40" /></a>
+  <a href="https://trendoday.com/github/repo/shanliuling/dsh-image-gen"><img src="https://trendoday.com/badge/github/repo/shanliuling/dsh-image-gen.svg" alt="GitHub Trending TypeScript daily rank #8 · Trendoday" height="40" /></a>
+  <a href="https://atomgit.com/shanliuling/dsh-image-gen"><img src="https://atomgit.com/shanliuling/dsh-image-gen/star/new_badge.svg" alt="AtomGit" height="40" /></a>
 </p>
 
 <p>
@@ -209,6 +211,8 @@ Sketch on an infinite canvas, lay out references, circle what should change, the
 - **Edit what you circle**: mark an area on an existing image and say "turn this into an axe"; only the circled part changes.
 - **Combine references**: drag images from Recent generations or the Gallery onto the canvas, or click Send to canvas on a thumbnail, then select several together as references. Repeated imports of the same history item are deduplicated.
 - Every result stays on the canvas, so you can keep iterating from any version.
+
+> **HTTPS deployment note**: tldraw 5 treats HTTPS on a non-localhost host as production and requires a valid tldraw license key before it will render the infinite canvas. Enter your key in the **Infinite canvas** section of the plugin settings (the configuration field is `tldrawLicenseKey`). Without one, the canvas stops rendering after about five seconds and the console reports `No tldraw license key provided!`; all other image features keep working. You can request a license at [tldraw.dev](https://tldraw.dev/get-a-license/trial) (a 100-day trial is available).
 
 <div align="center">
   <img src="docs/assets/readme/canvas-edit.webp" alt="Circle the sword on the canvas, say one sentence, and the Agent swaps only the sword for an axe" width="100%" />
@@ -434,9 +438,37 @@ Studio and multi-model comparison currently support cloud Providers only; ComfyU
 </details>
 
 <details>
+<summary><strong>Why does the infinite canvas stay blank on an HTTPS domain, with "No tldraw license key provided" in the console?</strong></summary>
+
+The tldraw 5 SDK enforces licensing in production, which includes HTTPS on a non-localhost host. Enter your own tldraw license key in the **Infinite canvas** section of the plugin settings (configuration field `tldrawLicenseKey`), then reopen the workbench or reload the page. The key is a public string: it ships to the browser and is validated against the deployment domain, so it must match the domain you use to access DSH.
+
+Without a key, the infinite canvas still works on `localhost` or in development; on an HTTPS deployment it stops rendering after about five seconds, while every other image feature keeps working. You can request a 100-day trial at [tldraw.dev](https://tldraw.dev/get-a-license/trial); commercial and hobby licenses are listed on the [tldraw pricing page](https://tldraw.dev/pricing).
+
+</details>
+
+<details>
 <summary><strong>Does deleting an item from the gallery remove its chat message?</strong></summary>
 
 No. Deleting a gallery record does not modify the original chat message. You may separately choose to remove the corresponding local image file from the workspace. File deletion is normally irreversible, so confirm carefully.
+
+</details>
+
+<details>
+<summary><strong>What if pnpm blocks build scripts during a GitHub install?</strong></summary>
+
+If pnpm reports `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`, open the profile's `pnpm-workspace.yaml` at the path shown by DSH. Set the exact key printed by pnpm to `true` under `allowBuilds`, then rerun the GitHub install command. If a later commit triggers the error again, use the new key. The npm package is prebuilt and ready to install.
+
+</details>
+
+<details>
+<summary><strong>Uploading a reference image shows “the current model does not support images”. What now?</strong></summary>
+
+The message comes from the DSH host, not from the plugin: before sending, DSH checks whether the **chat model** accepts images. If the chat model is text-only (for example Kilo), a message with an image is blocked before it ever reaches the plugin. The image model configured in the plugin (for example Gemini 3.1 Flash Image through a Google One subscription) is a separate model that the host does not look at in this step.
+
+Workarounds:
+
+1. Switch the chat model to one that accepts image input and keep your image provider as it is. Images are always produced by the provider configured in the plugin, whichever chat model you use.
+2. To keep the chat model, put the reference image in the current workspace instead of uploading it, and name its path in chat, for example “Use ref/cat.png in the workspace as the reference and give the cat sunglasses”. `edit_image` reads workspace files through `source_path` / `source_paths`, which skips the chat model's image check.
 
 </details>
 

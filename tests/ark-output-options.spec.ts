@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { arkOutputBody } from '../src/shared.js'
+import { arkOutputBody, seedreamGeneratesTransparent } from '../src/shared.js'
 import { generateOpenAICompatibleImage } from '../src/openai-compatible.js'
 import { editSeedreamImage } from '../src/seedream.js'
 
@@ -37,9 +37,9 @@ describe('arkOutputBody', () => {
       .toEqual({ output_format: 'jpeg', watermark: true })
   })
 
-  // Ark restricts `background: transparent` to image-to-image with an
-  // alpha-bearing reference. Forwarding the inert default would only create a
-  // way for text-to-image calls to fail.
+  // Before Seedream 5.5, Ark restricts `background: transparent` to
+  // image-to-image with an alpha-bearing reference. Forwarding the inert
+  // default would only create a way for text-to-image calls to fail.
   it('sends background only when it asks for transparency', () => {
     expect(arkOutputBody({ background: 'transparent' })).toEqual({ background: 'transparent' })
     expect(arkOutputBody({ background: 'opaque' })).toEqual({})
@@ -106,10 +106,43 @@ describe('Ark output options reach the request body', () => {
   })
 })
 
-// Ark rejects `transparent` on images/generations outright:
+// Before Seedream 5.5, Ark rejects `transparent` on images/generations:
 //   400 InvalidParameter "transparent background requires exactly one input image"
-// so the generation endpoint must drop the field even when the settings ask for it.
-describe('Ark transparent background stays on the edit path', () => {
+describe('Ark transparent background on text-to-image', () => {
+  it('sends background on a Seedream 5.5 generation request', async () => {
+    for (const model of ['doubao-seedream-5-5-261028', 'doubao-seedream-5-5']) {
+      const fetchMock = stubImageFetch()
+      await generateOpenAICompatibleImage({
+        provider: 'seedream', apiKey: 'ark-key', ...SEEDREAM, model,
+        prompt: 'a sword', size: '1024x1024', maxBytes: 1024, signal,
+        arkOptions: { outputFormat: 'png', watermark: false, background: 'transparent' },
+      })
+      expect(bodyOf(fetchMock)).toMatchObject({ background: 'transparent', output_format: 'png' })
+    }
+  })
+
+  it('requests opaque PNG from Seedream 5.5 for both generation and editing', async () => {
+    const input = {
+      ...SEEDREAM, model: 'doubao-seedream-5-5-261028', apiKey: 'ark-key', prompt: 'a sword',
+      maxBytes: 1024, signal, arkOptions: { outputFormat: 'png', background: 'opaque' } as const,
+    }
+    let fetchMock = stubImageFetch()
+    await generateOpenAICompatibleImage({ ...input, provider: 'seedream' })
+    expect(bodyOf(fetchMock)).toMatchObject({ background: 'opaque', output_format: 'png' })
+    fetchMock = stubImageFetch()
+    await editSeedreamImage({ ...input, sourceImages: [{ data: new Uint8Array([1]), mediaType: 'image/png' }] })
+    expect(bodyOf(fetchMock)).toMatchObject({ background: 'opaque', output_format: 'png' })
+  })
+
+  it('recognises only the released Seedream 5.5 model for text-to-image transparency', () => {
+    expect(seedreamGeneratesTransparent('doubao-seedream-5-5-261028')).toBe(true)
+    expect(seedreamGeneratesTransparent('doubao-seedream-5-5')).toBe(true)
+    expect(seedreamGeneratesTransparent('doubao-seedream-5-0-pro-260628')).toBe(false)
+    expect(seedreamGeneratesTransparent('doubao-seedream-5-0-flash-260915')).toBe(false)
+    expect(seedreamGeneratesTransparent('doubao-seedream-5-5-lite-270101')).toBe(false)
+    expect(seedreamGeneratesTransparent('doubao-seedream-5-5-261028-lite')).toBe(false)
+  })
+
   it('drops background from a generation request that asks for transparency', async () => {
     const fetchMock = stubImageFetch()
     await generateOpenAICompatibleImage({

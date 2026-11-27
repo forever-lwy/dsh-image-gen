@@ -36,6 +36,7 @@ export interface Config {
     openaiCompatChannels?: OpenAICompatChannel[];
     openaiCompatActiveChannel?: string;
     /** Editing model; empty reuses the generation model. */
+    openaiCompatSupportsGif?: boolean;
     openaiCompatEditModel?: string;
     /** Default quality; empty preserves the upstream default by omitting the field. */
     openaiCompatQuality?: string;
@@ -50,10 +51,12 @@ export interface Config {
       * relays take OpenAI's multipart form; some (e.g. SenseNova) accept the
       * generations endpoint but run edits on their own JSON contract with
       * `images: [{ image_url }]` objects; some take a multipart form whose
-      * `reference_images` field is a JSON array of base64 strings. Defaults to
-      * `multipart`.
+      * `reference_images` field is a JSON array of base64 strings; ModelScope
+      * API-Inference (#140) submits an async image task and polls
+      * `/v1/tasks/{task_id}` — that format also switches generation itself to
+      * the async task flow. Defaults to `multipart`.
       */
-    openaiCompatEditFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson';
+    openaiCompatEditFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson' | 'modelscopeAsync';
     /**
      * Extra JSON fields merged into the JSON edit body last (can override the
      * built-in defaults), e.g. SenseNova's `watermark`/`prompt_extend`.
@@ -85,8 +88,9 @@ export interface Config {
      */
     seedreamWatermark?: boolean;
     /**
-     * Ark `background`. Only the edit path can honour `transparent`, and only
-     * when every reference image already carries an alpha channel.
+     * Ark `background`. Before Seedream 5.5 only the edit path can honour
+     * `transparent`, and only when every reference image already carries an
+     * alpha channel.
      */
     seedreamBackground?: ArkBackgroundMode;
     dashscopeEndpoint?: string;
@@ -111,6 +115,12 @@ export interface Config {
     workspaceFolder?: string;
     /** Show the provider switcher beside the chat input. */
     showProviderPill?: boolean;
+    /**
+     * tldraw SDK license key for the infinite canvas. tldraw 5 requires a valid
+     * key in production (HTTPS on a non-loopback host); empty keeps the canvas
+     * in development mode only.
+     */
+    tldrawLicenseKey?: string;
     /** Prune the host request-image cache once at startup and then daily. */
     requestCachePrune?: boolean;
     /** Retain request-image variants for this many days. */
@@ -208,6 +218,8 @@ export declare function withProviderOverrides(config: Config, provider?: ImagePr
  * nothing needs moving.
  */
 export declare function migrateOpenAICompatConfig(config: Config): Config;
+/** Host part of a URL, or null when it cannot be parsed. */
+export declare function hostOf(raw: string): string | null;
 /** The workflow a ComfyUI call runs: the requested name when given, else the active one. */
 export declare function selectComfyUIWorkflow(active: {
     workflows: ComfyUIWorkflowEntry[];

@@ -114,6 +114,27 @@ describe('image tool registration', () => {
     vi.unstubAllGlobals()
   })
 
+  it('forwards a per-call background and lets it override the channel default', async () => {
+    const { ctx, tools } = harnessContext()
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgo=' }] }), { headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    apply(ctx, { provider: 'openai-compat', openaiCompatBaseURL: 'https://relay.example/v1', openaiCompatModel: 'relay', openaiCompatExtraBody: { watermark: false, background: 'opaque' }, saveToWorkspace: false })
+    const exec = { signal: new AbortController().signal } as never
+    await toolByName(tools, 'generate_image').execute({ prompt: 'cutout', background: 'transparent' }, exec)
+    await toolByName(tools, 'generate_images').execute({ prompts: ['one', 'two'], background: 'transparent' }, exec)
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([
+      { model: 'relay', prompt: 'cutout', size: '1024x1024', watermark: false, background: 'transparent' },
+      { model: 'relay', prompt: 'one', size: '1024x1024', watermark: false, background: 'transparent' },
+      { model: 'relay', prompt: 'two', size: '1024x1024', watermark: false, background: 'transparent' },
+    ])
+    vi.mocked(ctx.attachments.readImage).mockResolvedValue({ data: new Uint8Array([137, 80, 78, 71]), ref: attachment('source') } as never)
+    await toolByName(tools, 'edit_image').execute({ prompt: 'cutout', background: 'transparent' }, execWithUserImages('source'))
+    const editForm = fetchMock.mock.calls.at(-1)?.[1]?.body as FormData
+    expect(editForm.get('background')).toBe('transparent')
+    await expect(toolByName(tools, 'generate_image').execute({ prompt: 'bad', background: 'checker' } as never, exec)).rejects.toThrow('background')
+    vi.unstubAllGlobals()
+  })
+
   it('routes a named compat channel with its own credential and returns its channel id', async () => {
     const { ctx, tools } = harnessContext()
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgo=' }] }), { headers: { 'content-type': 'application/json' } }))
@@ -145,6 +166,83 @@ describe('image tool registration', () => {
       { signal: new AbortController().signal } as never,
     )).rejects.toThrow('Unknown OpenAI-compatible channel')
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('switches both chat tools to the ModelScope async flow when the channel selects that format (#140)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { ctx, tools } = harnessContext()
+      let polls = 0
+      const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
+        const request = String(url)
+        if (request === 'https://api-inference.modelscope.cn/v1/images/generations') {
+          expect((init?.headers as Record<string, string>)['X-ModelScope-Async-Mode']).toBe('true')
+          return Response.json({ task_id: 'task-1' })
+        }
+        if (request === 'https://api-inference.modelscope.cn/v1/tasks/task-1') {
+          polls += 1
+          // One PENDING poll proves the loop; every later poll succeeds.
+          return Response.json(polls === 1 ? { task_status: 'PENDING' } : { task_status: 'SUCCEED', output_images: ['data:image/png;base64,iVBORw0KGgo='] })
+        }
+        throw new Error(`unexpected fetch ${request}`)
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      apply(ctx, {
+        provider: 'openai-compat',
+        openaiCompatBaseURL: 'https://api-inference.modelscope.cn/v1',
+        openaiCompatModel: 'MiniMax/MiniMax-H3-Image',
+        saveToWorkspace: false,
+      })
+      const exec = { signal: new AbortController().signal } as never
+      const generating = toolByName(tools, 'generate_image').execute({ prompt: 'one' }, exec)
+      // The first poll answers PENDING; stepping past the 5 s interval frees the loop.
+      await vi.advanceTimersByTimeAsync(5_001)
+      await generating
+      expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api-inference.modelscope.cn/v1/images/generations')
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ model: 'MiniMax/MiniMax-H3-Image', prompt: 'one', size: '1024x1024' })
+      // Editing rides the same flow through the shared edit format, without the
+      // multipart /images/edits endpoint.
+      vi.mocked(ctx.attachments.readImage).mockResolvedValue({ data: new Uint8Array([137, 80, 78, 71]), ref: attachment('source') } as never)
+      await toolByName(tools, 'edit_image').execute({ prompt: 'edit' }, execWithUserImages('source'))
+      const editCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/images/generations'))
+      expect(editCalls).toHaveLength(2)
+      expect(JSON.parse(String(editCalls[1]![1]?.body)).image_url).toHaveLength(1)
+      expect(fetchMock.mock.calls.every(([url]) => !String(url).endsWith('/images/edits'))).toBe(true)
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('bounds a ModelScope chat edit by the configured cloud timeout (#140)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { ctx, tools } = harnessContext()
+      vi.stubGlobal('fetch', vi.fn(async (url: unknown) => {
+        const request = String(url)
+        if (request === 'https://api-inference.modelscope.cn/v1/images/generations') return Response.json({ task_id: 'task-1' })
+        if (request === 'https://api-inference.modelscope.cn/v1/tasks/task-1') return Response.json({ task_status: 'RUNNING' })
+        throw new Error(`unexpected fetch ${request}`)
+      }))
+      apply(ctx, {
+        provider: 'openai-compat',
+        openaiCompatBaseURL: 'https://api-inference.modelscope.cn/v1',
+        openaiCompatModel: 'MiniMax/MiniMax-H3-Image',
+        cloudTimeoutMs: 5_000,
+        saveToWorkspace: false,
+      })
+      vi.mocked(ctx.attachments.readImage).mockResolvedValue({ data: new Uint8Array([137, 80, 78, 71]), ref: attachment('source') } as never)
+      const executing = toolByName(tools, 'edit_image').execute({ prompt: 'edit' }, execWithUserImages('source'))
+      const rejection = expect(executing).rejects.toThrow('生图超时（5 秒未返回）')
+      await vi.advanceTimersByTimeAsync(4_999)
+      await vi.advanceTimersByTimeAsync(1)
+      await rejection
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('applies the configured cloud timeout to conversation generation', async () => {
@@ -252,7 +350,7 @@ describe('image tool registration', () => {
   it('lets the Loader serve settings instead of calling the removed installSection API', () => {
     const { ctx, tools, installSection } = harnessContext()
     apply(ctx, { provider: 'google', saveToWorkspace: false })
-    expect(tools.map(tool => tool.name)).toEqual(['canvas', 'generate_image', 'generate_images', 'edit_image', 'find_inspiration'])
+    expect(tools.map(tool => tool.name)).toEqual(['canvas', 'generate_image', 'generate_images', 'edit_image', 'decompose_image_layers', 'find_inspiration'])
     expect(installSection).not.toHaveBeenCalled()
     expect(ctx.logger.warn).not.toHaveBeenCalled()
   })
@@ -260,7 +358,7 @@ describe('image tool registration', () => {
   it('registers canvas tools, generate_image, and edit_image', () => {
     const { ctx, tools } = harnessContext()
     apply(ctx, { provider: 'google', saveToWorkspace: false })
-    expect(tools.map(tool => tool.name)).toEqual(['canvas', 'generate_image', 'generate_images', 'edit_image', 'find_inspiration'])
+    expect(tools.map(tool => tool.name)).toEqual(['canvas', 'generate_image', 'generate_images', 'edit_image', 'decompose_image_layers', 'find_inspiration'])
   })
 
   it('does not require webServer, so headless, acp and sdk profiles can activate it', async () => {
@@ -271,7 +369,7 @@ describe('image tool registration', () => {
   it('registers every tool without a webServer and mounts no routes', async () => {
     const { ctx, tools } = harnessContext({ webServer: false })
     apply(ctx, { provider: 'google', googleNative: true, googleEndpoint: 'https://relay.example/v1beta', googleModel: 'gemini-3-pro-image', saveToWorkspace: false })
-    expect(tools.map(tool => tool.name)).toEqual(['canvas', 'generate_image', 'generate_images', 'edit_image', 'find_inspiration'])
+    expect(tools.map(tool => tool.name)).toEqual(['canvas', 'generate_image', 'generate_images', 'edit_image', 'decompose_image_layers', 'find_inspiration'])
     const fetchMock = vi.fn(async () => Response.json({ candidates: [{ content: { parts: [{ inlineData: { data: 'iVBORw0KGgo=', mimeType: 'image/png' } }] } }] }))
     vi.stubGlobal('fetch', fetchMock)
     await toolByName(tools, 'generate_image').execute({ prompt: 'one' }, { signal: new AbortController().signal } as never)
@@ -288,6 +386,17 @@ describe('image tool registration', () => {
     expect(paths).toContain(THUMB_ROUTE)
     expect(paths).toContain(VAULT_DELETE_ROUTE)
     expect(paths).toContain(VAULT_REFS_ROUTE)
+  })
+
+  it('searches both inspiration libraries when every field is a placeholder (#160)', async () => {
+    const { ctx, tools } = harnessContext()
+    apply(ctx, { provider: 'google', saveToWorkspace: false })
+    const tool = toolByName(tools, 'find_inspiration')
+    const signal = { signal: new AbortController().signal } as never
+    const filled = await tool.execute({ query: '水彩', category: '', source: 'all', limit: 0 }, signal) as { total: number; hits: unknown[] }
+    const plain = await tool.execute({ query: '水彩' }, signal) as { total: number; hits: unknown[] }
+    expect(filled).toEqual(plain)
+    expect(filled.hits.length).toBeGreaterThan(0)
   })
 
   it('serves reusable inspiration prompts to the agent with bounded hits', async () => {
@@ -917,7 +1026,7 @@ describe('GIF output through the conversation tools', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     apply(ctx, { provider: 'google', saveToWorkspace: false })
-    for (const args of [{ output_format: 'gif' }, { frame_count: 4 }, { frame_duration_ms: 100 }]) {
+    for (const args of [{ output_format: 'gif' }, { output_format: 'svg', frame_count: 4 }]) {
       await expect(toolByName(tools, 'generate_image').execute({ prompt: 'wave', ...args }, exec())).rejects.toThrow('only supported with provider=openai or openai-compat')
     }
     await expect(toolByName(tools, 'generate_images').execute({ prompts: ['wave'], output_format: 'gif' }, exec())).resolves.toMatchObject({ failures: [{ index: 0, error: expect.stringContaining('provider=openai or openai-compat') }] })
@@ -1053,6 +1162,39 @@ describe('GIF output through the conversation tools', () => {
     expect(value.images).toHaveLength(3)
   })
 
+  // #160: GPT-family models under strict schemas fill every optional field.
+  const filledStillArgs = {
+    aspect_ratio: '1:1', background: 'opaque', frame_count: 0, frame_duration_ms: 0, image_size: '1K',
+    output_format: 'png', quality: 'high', size: '1024x1024', workflow: '',
+  } as const
+
+  it('generates an ordinary still image when every optional field is filled with placeholders (#160)', async () => {
+    const { ctx, tools } = harnessContext()
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jX1kAAAAASUVORK5CYII='
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [{ b64_json: png }] }), { headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    apply(ctx, { ...compatConfig })
+    await toolByName(tools, 'generate_image').execute({ prompt: 'boat', ...filledStillArgs }, exec())
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>
+    for (const field of ['output_format', 'frame_count', 'frame_duration_ms', 'workflow']) expect(body, field).not.toHaveProperty(field)
+    const batch = await toolByName(tools, 'generate_images').execute({ prompts: ['boat'], ...filledStillArgs }, exec()) as { failures: unknown[] }
+    expect(batch.failures).toEqual([])
+  })
+
+  it('does not reject filled-in OpenAI-only placeholders on other providers (#160)', async () => {
+    const { ctx, tools } = harnessContext()
+    vi.stubGlobal('fetch', vi.fn())
+    apply(ctx, { provider: 'google', saveToWorkspace: false })
+    await expect(toolByName(tools, 'generate_image').execute({ prompt: 'boat', ...filledStillArgs }, exec())).rejects.not.toThrow(/only supported with provider=openai/)
+  })
+
+  it('tells the model to drop output_format when the upstream refuses a GIF (#160)', async () => {
+    const { ctx, tools } = harnessContext()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: { message: 'GIF output is not available for this model.', param: 'output_format' } }), { status: 400, headers: { 'content-type': 'application/json' } })))
+    apply(ctx, { ...compatConfig })
+    await expect(toolByName(tools, 'generate_image').execute({ prompt: 'boat', output_format: 'gif', frame_count: 2 }, exec())).rejects.toThrow('output_format omitted')
+  })
+
   it('tells the model how to recover when frame fields arrive without a GIF', async () => {
     const { ctx, tools } = harnessContext()
     vi.stubGlobal('fetch', vi.fn())
@@ -1065,7 +1207,7 @@ describe('GIF output through the conversation tools', () => {
     apply(ctx, { ...compatConfig })
     for (const name of ['generate_image', 'generate_images']) {
       const properties = (toolByName(tools, name) as unknown as { parameters: { properties: Record<string, { description: string }> } }).parameters.properties
-      expect(properties.output_format?.description, name).toContain('Omit for an ordinary still image')
+      expect(properties.output_format?.description, name).toContain('Omit (or use png) for an ordinary still')
       expect(properties.frame_count?.description, name).toContain('Omit unless output_format=gif')
     }
   })
@@ -1249,6 +1391,21 @@ describe('GIF output through the conversation tools', () => {
       expect(formOf(fetchMock, 1).getAll('output_format')).toEqual(['gif'])
     })
 
+    it('edits the conversation image as a still when every selector and output field is a placeholder (#160)', async () => {
+      const { ctx, tools } = harnessContext()
+      const fetchMock = vi.fn(async () => pngResponse())
+      vi.stubGlobal('fetch', fetchMock)
+      apply(ctx, compatConfig)
+      sourceImage(ctx)
+      await toolByName(tools, 'edit_image').execute({
+        prompt: 'make the cat wave', source: 'conversation', source_attachment_id: '', source_attachment_ids: [], source_path: '', source_paths: [''],
+        output_format: 'png', frame_count: 0, frame_duration_ms: 0, workflow: '',
+      }, editExec())
+      const form = formOf(fetchMock, 0)
+      expect(form.get('image')).toBeInstanceOf(Blob)
+      for (const field of ['output_format', 'frame_count', 'frame_duration_ms']) expect(form.has(field), field).toBe(false)
+    })
+
     it('leaves a still edit request exactly as before', async () => {
       const { ctx, tools } = harnessContext()
       const fetchMock = vi.fn(async () => pngResponse())
@@ -1269,9 +1426,7 @@ describe('GIF output through the conversation tools', () => {
       vi.stubGlobal('fetch', fetchMock)
       apply(ctx, { provider: 'google', saveToWorkspace: false })
       sourceImage(ctx)
-      for (const args of [{ output_format: 'gif' }, { frame_count: 4 }, { frame_duration_ms: 100 }]) {
-        await expect(toolByName(tools, 'edit_image').execute({ prompt: 'wave', ...args }, editExec())).rejects.toThrow('only supported with provider=openai or openai-compat')
-      }
+      await expect(toolByName(tools, 'edit_image').execute({ prompt: 'wave', output_format: 'gif' }, editExec())).rejects.toThrow('only supported with provider=openai or openai-compat')
       expect(fetchMock).not.toHaveBeenCalled()
     })
 
@@ -1302,7 +1457,7 @@ describe('GIF output through the conversation tools', () => {
       const { ctx, tools } = harnessContext()
       apply(ctx, compatConfig)
       const properties = (toolByName(tools, 'edit_image').parameters as { properties: Record<string, { enum?: string[]; description?: string }> }).properties
-      expect(properties.output_format?.enum).toEqual(['gif'])
+      expect(properties.output_format?.enum).toEqual(['png', 'gif'])
       expect(properties).toHaveProperty('frame_count')
       expect(properties).toHaveProperty('frame_duration_ms')
       expect(properties.output_format?.description).toContain('reference image')

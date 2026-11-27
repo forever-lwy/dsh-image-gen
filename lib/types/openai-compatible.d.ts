@@ -1,4 +1,3 @@
-/** OpenAI Images API and compatible response adapter. */
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment';
 import { type ArkOutputOptions } from './shared.js';
 /**
@@ -57,9 +56,20 @@ export declare function generateOpenAICompatibleImage(input: {
     signal: AbortSignal;
     /** Ark-only output controls; ignored by every other provider. */
     arkOptions?: ArkOutputOptions;
+    /**
+     * ModelScope-style async task mode (#140): the generations endpoint answers
+     * `{"task_id": ...}` and the image URLs only appear after polling
+     * `/v1/tasks/{task_id}`. Opt-in per channel through the `modelscopeAsync`
+     * edit format, so every other relay keeps today's request shape untouched.
+     */
+    asyncImages?: boolean;
 }): Promise<GeneratedCompatibleImage>;
-/** How the edits endpoint expects its request body (#41). */
-export type CompatEditFormat = 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson' | 'xaiJson' | 'qwenJson';
+/**
+ * How the edits endpoint expects its request body (#41). `modelscopeAsync`
+ * additionally switches generation itself to ModelScope's async task flow
+ * (#140): submit → poll `/v1/tasks/{id}` → download `output_images`.
+ */
+export type CompatEditFormat = 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson' | 'xaiJson' | 'qwenJson' | 'modelscopeAsync';
 export declare function editOpenAICompatibleImage(input: {
     apiKey: string;
     baseURL: string;
@@ -101,3 +111,44 @@ export declare function editOpenAICompatibleImage(input: {
      */
     extraBody?: Readonly<Record<string, unknown>>;
 }): Promise<GeneratedCompatibleImage>;
+/**
+ * Models that fill every field keep retrying a GIF or SVG the upstream already
+ * refused (#160); tell them plainly how to get the still image instead.
+ */
+export declare function outputFormatRejectionHint(status: number, text: string): string;
+/**
+ * Decode a response body a relay sent compressed while the runtime did not
+ * decode it itself.
+ *
+ * Some OpenAI-compatible relays answer with `content-encoding: zstd` (or gzip /
+ * br / deflate) and the fetch implementation in use does not always honour it.
+ * The compressed bytes then reach `JSON.parse` and surface as
+ * `openai-compat image request returned invalid JSON` — a message that points
+ * at the prompt or the site rather than at the transport, so the failure is
+ * routinely misdiagnosed.
+ *
+ * Two details matter beyond the single-coding case:
+ *
+ * - A header may list several codings (`gzip, zstd`). HTTP applies them in the
+ *   order listed, so decoding runs in reverse — decoding only the last one
+ *   would hand gzip bytes to the parser and still report invalid JSON.
+ * - The zstd magic (`28 b5 2f fd`) is also checked on its own, because a few
+ *   relays compress without declaring the header, and because a header that
+ *   disagrees with the body (the runtime already decoded it) must not stop a
+ *   body that is plainly zstd from being decoded.
+ *
+ * A decompression error means the declaration disagrees with the bytes
+ * (typically the runtime already decoded them, or the body was never
+ * compressed), so the input is returned unchanged and the caller's own parser
+ * reports the real problem. Returning the bytes untouched is deliberate:
+ * swallowing the original error here would hide the actual cause.
+ *
+ * `maxOutputLength` is passed to every decompression call so a small body that
+ * expands to hundreds of MiB is rejected *before* the buffer is allocated, and
+ * `maxBytes` is checked again afterwards. An output-limit failure is a real
+ * error and is propagated; it must not be mistaken for an encoding mismatch.
+ *
+ * Exported so the tests can drive each branch directly; at runtime it is only
+ * reached through `readBoundedBytes`.
+ */
+export declare function decodeCompressedBody(bytes: Uint8Array, encoding: string | null, maxBytes?: number): Uint8Array;

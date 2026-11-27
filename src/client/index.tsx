@@ -47,6 +47,7 @@ import {
   resolveOpenAICompatChannels,
   resolveOpenAICompatModels,
   uniqueComfyUIWorkflowName,
+  localizeChannelLabel,
   type CloudImageProvider,
   type ComfyUIWorkflowEntry,
   type OpenAICompatChannel,
@@ -76,6 +77,7 @@ import { parseExtraFields, parseSizeTable } from './output-settings.js'
 import { DEFAULT_COMPAT_QUALITIES, validateOfficialSize } from '../openai-output.js'
 import { ImageProviderPill, PROVIDER_PILL_STYLE, type ProviderPillFace } from './provider-pill.js'
 import { writeSetting } from './settings-write.js'
+import { StudioShortcutButton, type SidebarRightFace } from './studio-shortcut.js'
 
 /** Build timestamp injected by tsdown at bundle time. */
 declare const __CANVAS_BUILD_TS__: string
@@ -105,14 +107,15 @@ interface ImageSettings {
   openaiCompatModels?: string[]
   openaiCompatChannels?: OpenAICompatChannel[]
   openaiCompatActiveChannel?: string
+  openaiCompatSupportsGif?: boolean
   openaiCompatEditModel?: string
   openaiCompatSizes?: Record<string, Record<string, string>>
   openaiCompatQuality?: string
   openaiCompatQualityOptions?: string[]
   openaiCompatExtraBody?: Record<string, unknown>
   openaiCompatEditSizeMode?: 'auto' | 'selected'
-  /** Edit-request shape for the openai-compat relay (#41); see src/config.ts. */
-  openaiCompatEditFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson'
+  /** Edit-request shape for the openai-compat relay (#41); see src/config.ts. `modelscopeAsync` also switches generation to the async task flow (#140). */
+  openaiCompatEditFormat?: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson' | 'modelscopeAsync'
   /** Extra JSON fields merged into the JSON edit body; ignored in multipart mode. */
   openaiCompatEditExtra?: Record<string, unknown>
   seedreamBaseURL?: string
@@ -121,7 +124,7 @@ interface ImageSettings {
   seedreamOutputFormat?: 'png' | 'jpeg'
   /** Ark `watermark`; off removes the baked-in "AI generated" mark. */
   seedreamWatermark?: boolean
-  /** Ark `background`; `transparent` needs an alpha-bearing edit reference. */
+  /** Ark `background`; before Seedream 5.5 `transparent` needs an alpha-bearing edit reference. */
   seedreamBackground?: 'opaque' | 'transparent'
   dashscopeEndpoint?: string
   dashscopeModel?: string
@@ -138,6 +141,7 @@ interface ImageSettings {
   saveToWorkspace?: boolean
   workspaceFolder?: string
   showProviderPill?: boolean
+  tldrawLicenseKey?: string
 }
 interface CredentialInfo { configured?: boolean; source?: string; writable?: boolean }
 interface CredentialResult { ok: boolean; value?: Readonly<Record<string, CredentialInfo>> }
@@ -333,6 +337,24 @@ export function apply(ctx: Context): void {
       inject: injectSettingsFace,
     }, ImageGenerationSettingsCard))
   }
+  // Composer shortcut (DSH slot 'conversation.input.right', rendered right
+  // before the model select): an icon that opens or closes the right-sidebar
+  // studio. Registered only when the host exposes `sidebarRight`, so older
+  // hosts keep the composer exactly as before.
+  const injectStudioShortcut = (owner: Context): void => {
+    const sidebarRight = owner.get('sidebarRight') as SidebarRightFace | undefined
+    if (sidebarRight === undefined) return
+    const ownerRegister = owner.slots.register.bind(owner.slots) as unknown as (options: object, component: unknown) => () => void
+    ;(owner.slots.inject as (key: string, factory: () => () => void) => void)('conversation.input.right', () => ownerRegister({
+      name: 'conversation.input.right',
+      id: 'image-studio',
+      // After the provider pill (order 10), so the icon is next to the model select.
+      order: 20,
+      inject: () => ({ locale, scope, sidebarRight, studioTab: { id: SIDEBAR_STUDIO_TAB_ID, kind: SIDEBAR_STUDIO_TAB_KIND } }),
+    }, StudioShortcutButton))
+  }
+  ctx.inject(['sidebarRight'], injectStudioShortcut)
+
   // Composer tool-row pill (DSH official slot: 'conversation.input.right', the
   // seat right beside the model select): switch the default image provider
   // without leaving the chat. Writes the same 'provider' field as the card.
@@ -511,6 +533,7 @@ interface ProviderRowState {
   label: string
   model: string
   models: string[]
+  supportsGif: boolean
   editModel: string
   baseURL: string
   googleNative: boolean
@@ -529,8 +552,8 @@ interface ProviderRowState {
   workflows: ComfyUIWorkflowEntry[]
   activeWorkflow: string
   timeoutSeconds: number
-  /** openai-compat only: edits request shape (#41). Other rows keep the default. */
-  editFormat: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson'
+  /** openai-compat only: edits request shape (#41). `modelscopeAsync` also switches generation to the async task flow (#140). Other rows keep the default. */
+  editFormat: 'multipart' | 'jsonImageUrlArray' | 'formReferenceImages' | 'siliconflowJson' | 'modelscopeAsync'
   /** openai-compat only: extra JSON fields for the JSON edit body, as user text. */
   editExtraText: string
   sizeTableText: string
@@ -550,6 +573,7 @@ function emptyProviderRow(): ProviderRowState {
     label: '',
     model: '',
     models: [],
+    supportsGif: false,
     editModel: '',
     baseURL: '',
     googleNative: false,
@@ -638,7 +662,7 @@ function editExtraTextOf(value: Record<string, unknown> | undefined): string {
 
 /** Persisted or selected edit-format value → row state; unknown values fall back to standard multipart. */
 function parseEditFormat(value: string | undefined): ProviderRowState['editFormat'] {
-  return value === 'jsonImageUrlArray' || value === 'formReferenceImages' || value === 'siliconflowJson' ? value : 'multipart'
+  return value === 'jsonImageUrlArray' || value === 'formReferenceImages' || value === 'siliconflowJson' || value === 'modelscopeAsync' ? value : 'multipart'
 }
 
 function compatChannelRowKey(channelId: string): `openai-compat:${string}` {
@@ -650,6 +674,7 @@ function compatRowFields(channel: OpenAICompatChannel): Partial<ProviderRowState
     label: channel.label,
     model: channel.model,
     models: resolveOpenAICompatModels({ openaiCompatModel: channel.model, openaiCompatModels: channel.models ?? [] }),
+    supportsGif: channel.supportsGif === true,
     editModel: channel.editModel ?? '',
     baseURL: channel.baseURL,
     editFormat: parseEditFormat(channel.editFormat),
@@ -711,8 +736,16 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps) {
   const [saveToWorkspace, setSaveToWorkspace] = useState(() => props.scope.getSnapshot().value?.saveToWorkspace ?? true)
   const [workspaceFolder, setWorkspaceFolder] = useState(() => props.scope.getSnapshot().value?.workspaceFolder ?? 'dsh-image-gen')
   const [showPill, setShowPill] = useState(() => props.scope.getSnapshot().value?.showProviderPill === true)
+  const initialTldrawLicenseKey = props.scope.getSnapshot().value?.tldrawLicenseKey ?? ''
+  const [tldrawLicenseKey, setTldrawLicenseKey] = useState(initialTldrawLicenseKey)
+  /** Last value the host accepted (or reported); used to tell drafts from persisted values. */
+  const persistedTldrawLicenseKey = useRef(initialTldrawLicenseKey)
+  /** Save currently in flight; blocks Enter+Blur from writing the same value twice. */
+  const pendingTldrawLicenseSave = useRef<string | null>(null)
   const [uiMessage, setUiMessage] = useState('')
   const [uiMessageIsError, setUiMessageIsError] = useState(false)
+  const [tldrawMessage, setTldrawMessage] = useState('')
+  const [tldrawMessageIsError, setTldrawMessageIsError] = useState(false)
   const [workspaceMessage, setWorkspaceMessage] = useState('')
   const [workspaceMessageIsError, setWorkspaceMessageIsError] = useState(false)
   const [rows, setRows] = useState<ProviderRows>(() => rowsFromSettings(props.scope.getSnapshot().value))
@@ -900,6 +933,12 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps) {
     setSaveToWorkspace(value?.saveToWorkspace ?? true)
     setWorkspaceFolder(value?.workspaceFolder ?? 'dsh-image-gen')
     setShowPill(value?.showProviderPill === true)
+    const hostTldrawLicenseKey = value?.tldrawLicenseKey ?? ''
+    const previousTldrawLicenseKey = persistedTldrawLicenseKey.current
+    persistedTldrawLicenseKey.current = hostTldrawLicenseKey
+    // Adopt host changes only while the draft still mirrors the last persisted
+    // value; an in-progress edit (or a newer save) must survive the snapshot.
+    setTldrawLicenseKey(current => current === previousTldrawLicenseKey ? hostTldrawLicenseKey : current)
     setRows(current => {
       const next = { ...current }
       for (const provider of IMAGE_PROVIDERS) {
@@ -990,6 +1029,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps) {
           baseURL: row.baseURL.trim(),
           model: row.model.trim(),
           models: resolveOpenAICompatModels({ openaiCompatModel: row.model, openaiCompatModels: row.models }),
+          supportsGif: row.supportsGif,
           editModel: row.editModel.trim(),
           quality: row.generationQuality.trim(),
           qualityOptions: [...new Set(row.qualityOptionsText.split(',').map(value => value.trim()).filter(Boolean))],
@@ -1038,6 +1078,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps) {
         if (provider === 'openai-compat') {
           await saveSetting('openaiCompatLabel', row.label.trim())
           await saveSetting('openaiCompatModels', resolveOpenAICompatModels({ openaiCompatModel: row.model, openaiCompatModels: row.models }))
+          await saveSetting('openaiCompatSupportsGif', row.supportsGif)
           await saveSetting('openaiCompatEditModel', row.editModel.trim())
           await saveSetting('openaiCompatEditFormat', row.editFormat)
           await saveSetting('openaiCompatEditExtra', editExtra)
@@ -1344,6 +1385,36 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps) {
     })
   }
 
+  /** tldraw license key persists on Enter or blur; empty removes the override. */
+  const commitTldrawLicenseKey = (): void => {
+    const submitted = tldrawLicenseKey
+    const next = submitted.trim()
+    if (next === persistedTldrawLicenseKey.current && pendingTldrawLicenseSave.current === null) {
+      setTldrawLicenseKey(current => current === submitted ? next : current)
+      return
+    }
+    // Enter fires before blur for the same edit; one write per value at a time.
+    if (pendingTldrawLicenseSave.current === next) return
+    pendingTldrawLicenseSave.current = next
+    setTldrawMessage(''); setTldrawMessageIsError(false)
+    void saveSetting('tldrawLicenseKey', next).then(() => {
+      // A newer edit or save superseded this request; leave its draft alone.
+      if (pendingTldrawLicenseSave.current !== next) return
+      pendingTldrawLicenseSave.current = null
+      persistedTldrawLicenseKey.current = next
+      // Only normalize the draft this request was sent for; newer input wins.
+      setTldrawLicenseKey(current => current === submitted ? next : current)
+      setTldrawMessage(t('saved'))
+    }).catch((cause: unknown) => {
+      if (pendingTldrawLicenseSave.current !== next) return
+      pendingTldrawLicenseSave.current = null
+      // Roll back only an untouched draft; edits made after the request survive.
+      setTldrawLicenseKey(current => current === submitted ? persistedTldrawLicenseKey.current : current)
+      setTldrawMessage(cause instanceof Error ? cause.message : String(cause))
+      setTldrawMessageIsError(true)
+    })
+  }
+
   const renderCloudBody = (provider: CloudImageProvider, channel?: OpenAICompatChannel) => {
     const target = channel === undefined ? provider : compatChannelRowKey(channel.id)
     const row = rows[target]!
@@ -1476,6 +1547,11 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps) {
           ) : null}
           {provider === 'openai-compat' ? (
             <label className="dsh-ig-field">
+              <span className="dsh-ig-label"><input type="checkbox" checked={row.supportsGif} disabled={!settingsWritable} onChange={event => update({ supportsGif: event.target.checked })} /> {t('supportsGif')}</span>
+            </label>
+          ) : null}
+          {provider === 'openai-compat' ? (
+            <label className="dsh-ig-field">
               <span className="dsh-ig-label">{t('editModel')}</span>
               <input className="dsh-ig-input" value={row.editModel} onChange={event => { update({ editModel: event.target.value }) }} list={modelListId} disabled={!settingsWritable} />
               <span className="dsh-ig-hint">{t('editModelHint')}</span>
@@ -1496,7 +1572,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps) {
                 <option value="formReferenceImages">{t('editFormatFormReferenceImages')}</option>
                 <option value="siliconflowJson">{t('editFormatSiliconFlow')}</option>
               </select>
-              <span className="dsh-ig-hint">{t(editFormat === 'siliconflowJson' ? 'editFormatSiliconFlowHint' : 'editFormatHint')}</span>
+              <span className="dsh-ig-hint">{t(editFormat === 'siliconflowJson' ? 'editFormatSiliconFlowHint' : editFormat === 'modelscopeAsync' ? 'editFormatModelScopeHint' : 'editFormatHint')}</span>
             </label>
           ) : null}
           {provider === 'seedream' ? (
@@ -1567,7 +1643,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps) {
               </label>
             </>
           ) : null}
-          {provider === 'openai-compat' && (editFormat === 'jsonImageUrlArray' || editFormat === 'qwenJson' || editFormat === 'siliconflowJson') ? (
+          {provider === 'openai-compat' && (editFormat === 'jsonImageUrlArray' || editFormat === 'qwenJson' || editFormat === 'siliconflowJson' || editFormat === 'modelscopeAsync') ? (
             <>
             {editFormat === 'jsonImageUrlArray' ? (
             <label className="dsh-ig-field">
@@ -1759,7 +1835,7 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps) {
       <div key={target} className="dsh-ig-provider-row dsh-ig-compat-channel-row">
         <div className="dsh-ig-provider-head-row">
           <button type="button" className="dsh-ig-provider-head" aria-expanded={row.expanded} onClick={() => { updateRow(target, { expanded: !row.expanded }) }}>
-            <span className="dsh-ig-provider-name">{channel.label}</span>
+            <span className="dsh-ig-provider-name">{localizeChannelLabel(channel.label, lang === 'en' ? 'en' : 'zh')}</span>
             <span className={badge.className} title={badge.text}><span className="dsh-ig-badge-dot" aria-hidden="true" />{badge.text}</span>
             <span className={`dsh-ig-provider-chevron ${row.expanded ? 'dsh-ig-provider-chevron-open' : ''}`} aria-hidden="true">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4"/></svg>
@@ -1862,6 +1938,29 @@ export function ImageGenerationSettingsCard(props: SettingsCardProps) {
               <span className="dsh-ig-hint">{t('showPillHint')}</span>
               {uiMessage.length > 0 ? <p className={`dsh-ig-status${uiMessageIsError ? ' dsh-ig-status-error' : ''}`} role="status">{uiMessage}</p> : null}
             </div>
+          </div>
+          <div className="dsh-ig-section">
+            <span className="dsh-ig-section-title">{t('tldrawSection')}</span>
+            <label className="dsh-ig-field">
+              <span className="dsh-ig-label">{t('tldrawLicenseKey')}</span>
+              <input
+                className="dsh-ig-input"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                value={tldrawLicenseKey}
+                onChange={event => { setTldrawLicenseKey(event.target.value) }}
+                onBlur={() => { commitTldrawLicenseKey() }}
+                onKeyDown={event => { if (event.key === 'Enter') commitTldrawLicenseKey() }}
+                placeholder="tldraw-..."
+                disabled={!settingsWritable}
+              />
+              <span className="dsh-ig-hint">
+                {t('tldrawLicenseHint')}{' '}
+                <a className="dsh-ig-link" href="https://tldraw.dev/get-a-license/trial" target="_blank" rel="noopener noreferrer">{t('getTldrawLicense')}</a>
+              </span>
+              {tldrawMessage.length > 0 ? <p className={`dsh-ig-status${tldrawMessageIsError ? ' dsh-ig-status-error' : ''}`} role="status">{tldrawMessage}</p> : null}
+            </label>
           </div>
         </div>
     </li>
