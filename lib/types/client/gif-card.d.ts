@@ -60,8 +60,12 @@ export interface GifLightboxProps {
     footer?: ReactNode;
     /** Extra class on the picture's frame, e.g. while it is being edited. */
     wrapClassName?: string | undefined;
+    sheetSize?: {
+        width: number;
+        height: number;
+    } | undefined;
     /** Frames the strip marks, e.g. the ones with notes. */
     frameMarks?: ReadonlySet<number>;
 }
-/** The GIF lightbox: the stage, the player bar, and copy, download and close at the top right. */
-export declare function GifLightbox({ gif, player, alt, poster, onClose, onDragStart, stageOverlay, barTrailing, footer, wrapClassName, frameMarks }: GifLightboxProps): import("react").JSX.Element;
+/** The animation, frame controls and file actions inside the shared image viewer. */
+export declare function GifLightbox({ gif, player, alt, poster, onDragStart, stageOverlay, barTrailing, footer, wrapClassName, sheetSize, frameMarks }: GifLightboxProps): import("react").JSX.Element;

@@ -45,6 +45,7 @@ export const DICT = {
 
     // 卡片与弹窗操作
     preview: '查看大图',
+    previewFailed: '图片加载失败',
     download: '下载图片',
     copyImg: '复制图片',
     copyPpt: '复制 Prompt',
@@ -170,6 +171,7 @@ export const DICT = {
 
     // Card & Lightbox Actions
     preview: 'Full Preview',
+    previewFailed: 'Image could not be loaded',
     download: 'Download',
     copyImg: 'Copy Image',
     copyPpt: 'Copy Prompt',

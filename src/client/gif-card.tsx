@@ -7,6 +7,7 @@ import { gifT, type GifT } from './gif-i18n.js'
 import { GifDownloadMenu, GifSpeedControl, type GifDownloadKind } from './gif-menus.js'
 import { GifStage, gifKeyboardAction, speedSuffix, useGifPlayer, useGifSpeed, useGifStatus, type GifPlayer } from './gif-player.js'
 import { copyImageBlob } from './gallery-view.js'
+import { ImageViewport } from './image-lightbox.js'
 
 export interface GifCardInput {
   lang: 'zh' | 'en'
@@ -149,7 +150,6 @@ export function GifToolbarDownload({ gif, onOpenChange }: { gif: GifCard; onOpen
 }
 
 const COPY_ICON = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-const CLOSE_ICON = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
 
 export interface GifLightboxProps {
   gif: GifCard
@@ -167,27 +167,16 @@ export interface GifLightboxProps {
   footer?: ReactNode
   /** Extra class on the picture's frame, e.g. while it is being edited. */
   wrapClassName?: string | undefined
+  sheetSize?: { width: number; height: number } | undefined
   /** Frames the strip marks, e.g. the ones with notes. */
   frameMarks?: ReadonlySet<number>
 }
 
-/** The GIF lightbox: the stage, the player bar, and copy, download and close at the top right. */
-export function GifLightbox({ gif, player, alt, poster, onClose, onDragStart, stageOverlay, barTrailing, footer, wrapClassName, frameMarks }: GifLightboxProps) {
+/** The animation, frame controls and file actions inside the shared image viewer. */
+export function GifLightbox({ gif, player, alt, poster, onDragStart, stageOverlay, barTrailing, footer, wrapClassName, sheetSize, frameMarks }: GifLightboxProps) {
   const t = gif.t
   const ready = useGifStatus(player) === 'ready'
   const [toast, setToast] = useState<string>()
-  const backdropRef = useRef<HTMLDivElement>(null)
-  const dockRef = useRef<HTMLDivElement>(null)
-
-  // The frame makes room for the bars under it, which grow with the edit bar and its messages.
-  useEffect(() => {
-    const dock = dockRef.current
-    const backdrop = backdropRef.current
-    if (dock === null || backdrop === null || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => { backdrop.style.setProperty('--dsh-ig-gif-dock-h', `${String(dock.offsetHeight)}px`) })
-    observer.observe(dock)
-    return () => { observer.disconnect() }
-  }, [])
 
   // Space and the arrows drive the player; a focused control keeps the keys it
   // handles itself, and the frame strip stops the ones it takes.
@@ -213,20 +202,19 @@ export function GifLightbox({ gif, player, alt, poster, onClose, onDragStart, st
     return () => { clearTimeout(timer) }
   }, [toast])
 
-  return <div ref={backdropRef} className="dsh-ig-lightbox-backdrop" onClick={onClose}>
+  return <>
     <div className="dsh-ig-gif-actions" onClick={event => { event.stopPropagation() }}>
       <button type="button" className="dsh-ig-gif-action" title={ready ? t('gifCopyFrame') : t('gifCopyFirstFrame')} aria-label={ready ? t('gifCopyFrame') : t('gifCopyFirstFrame')} onClick={() => { void gif.copyFrame().then(setToast) }}>{COPY_ICON}</button>
       <GifDownloadMenu player={player} t={t} variant="lightbox" onDownload={gif.download} />
-      <button type="button" className="dsh-ig-gif-action" title={t('gifClose')} aria-label={t('gifClose')} onClick={onClose}>{CLOSE_ICON}</button>
     </div>
     {toast !== undefined ? <div className="dsh-ig-gif-toast" role="status">{toast}</div> : null}
-    <div className={wrapClassName === undefined ? 'dsh-ig-lightbox-img-wrap dsh-ig-gif-wrap' : `dsh-ig-lightbox-img-wrap dsh-ig-gif-wrap ${wrapClassName}`} onClick={event => { event.stopPropagation() }}>
+    <ImageViewport key={player.url} size={sheetSize ?? player.getSnapshot().info} frameClassName={`dsh-ig-gif-wrap ${wrapClassName ?? ''}`}>
       <GifStage player={player} stage="lightbox" className="dsh-ig-lightbox-img" alt={alt} poster={poster} onDragStart={onDragStart} />
       {stageOverlay}
-    </div>
-    <div ref={dockRef} className="dsh-ig-gif-dock" onClick={event => { event.stopPropagation() }}>
+    </ImageViewport>
+    <div className="dsh-ig-gif-dock" onClick={event => { event.stopPropagation() }}>
       <GifPlayerBar player={player} t={t} trailing={barTrailing} marks={frameMarks} />
       {footer}
     </div>
-  </div>
+  </>
 }

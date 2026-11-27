@@ -24,7 +24,7 @@ export interface GalleryGifPreview {
  * which the gallery's own image shows.
  */
 export declare function useGalleryGifPreview(item: GalleryItem | null, lang: 'zh' | 'en'): GalleryGifPreview | undefined;
-/** The preview's animation, in place of the gallery image; sized to leave room for the player bar. */
+/** The animation shares the still preview's zoomable frame. */
 export declare function GalleryGifStage({ preview, poster }: {
     preview: GalleryGifPreview;
     poster: string | undefined;

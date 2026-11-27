@@ -10,7 +10,7 @@ export declare function decodeImageRef(value: string, parse: (input: unknown) =>
 export declare function imageUrlFor(ref: ImageAttachmentRef): string;
 /** Same-origin GET URL for a host-rendered thumbnail of one attachment. */
 export declare function thumbUrlFor(ref: ImageAttachmentRef, width?: number): string;
-/** Mid-size preview used by the lightbox; originals stay for copy/download/drag. */
+/** Cached mid-size image for the gallery viewer's initial fit-to-window view. */
 export declare function previewUrlFor(ref: ImageAttachmentRef): string;
 /** Content-addressed vault key: the sha256 of the original bytes, validated on both faces. */
 export declare const VAULT_KEY_PATTERN: RegExp;

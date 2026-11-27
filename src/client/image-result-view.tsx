@@ -19,6 +19,7 @@ import { conversationRegenerateRequest, gifOutputRequest } from './conversation-
 import { GifCardOverlay, GifToolbarDownload, useGifCard } from './gif-card.js'
 import { GIF_EDIT_PREFETCH_WAIT_MS, GIF_EDIT_SENT_TOAST_MS, GifCardEditChip, GifEditDoneDock, GifEditLightbox, GifEditNotice, useGifEdit, waitAtMost } from './gif-edit.js'
 import { GifStage } from './gif-player.js'
+import { ImageLightbox, ImageViewport } from './image-lightbox.js'
 import { startGalleryImageDrag } from './tl/gallery-image-transfer.js'
 
 export interface ImageCardFace { locale?: LocaleService | undefined; promoted: boolean }
@@ -269,15 +270,6 @@ function ImageResultCard({
     }
   }, [regenerateOpen, isRegenerating])
 
-  useEffect(() => {
-    if (!previewOpen) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPreviewOpen(false)
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => { window.removeEventListener('keydown', onKeyDown) }
-  }, [previewOpen])
-
   // Keep the completion attached to the preview and the original image it came back to.
   useEffect(() => { edit.dismissDone() }, [previewOpen, originId])
 
@@ -459,14 +451,11 @@ function ImageResultCard({
     <GifEditNotice edit={edit} />
     {url === undefined && error === undefined ? <div className="dsh-ig-loading">{t('loading')}</div> : null}
     {url !== undefined ? <div className={gifPopupOpen ? 'dsh-ig-container is-gif-open' : 'dsh-ig-container'}>
-      {gif.player !== undefined
-        ? <GifStage player={gif.player} stage="card" className="dsh-ig-image" alt={activeAttachment?.name ?? 'Generated image'} poster={url} onClick={() => { if (!isRegenerating) setPreviewOpen(true) }} onDragStart={onDragStart} />
-        : <img
-        className="dsh-ig-image"
-        src={url}
-        alt={activeAttachment?.name ?? 'Generated image'}
-        onClick={() => { if (!isRegenerating) setPreviewOpen(true) }}
-      />}
+      <button type="button" className="dsh-ig-open-preview" disabled={isRegenerating} onClick={() => setPreviewOpen(true)}>
+        {gif.player !== undefined
+          ? <GifStage player={gif.player} stage="card" className="dsh-ig-image" alt={activeAttachment?.name ?? 'Generated image'} poster={url} onDragStart={onDragStart} />
+          : <img className="dsh-ig-image" src={url} alt={activeAttachment?.name ?? 'Generated image'} />}
+      </button>
       <GifCardOverlay gif={gif} onOpenChange={setGifPopupOpen} />
       <GifCardEditChip edit={edit} onOpen={() => { if (!isRegenerating) setPreviewOpen(true) }} />
       {isRegenerating ? (
@@ -501,19 +490,14 @@ function ImageResultCard({
       </div> : null}
     </div> : null}
 
-    {previewOpen && url !== undefined && gif.player !== undefined
-      ? <GifEditLightbox edit={edit} gif={gif} player={gif.player} alt={activeAttachment?.name ?? 'Generated image preview'} poster={url} onClose={() => { setPreviewOpen(false) }} onDragStart={onDragStart} />
-      : null}
-    {previewOpen && url !== undefined && gif.player === undefined ? <div className="dsh-ig-lightbox-backdrop" onClick={() => { setPreviewOpen(false) }}>
-      <div className="dsh-ig-lightbox-img-wrap" onClick={(e) => { e.stopPropagation() }}>
-        <img
-          className="dsh-ig-lightbox-img"
-          src={url}
-          alt={activeAttachment?.name ?? 'Generated image preview'}
-        />
-      </div>
-      <GifEditDoneDock edit={edit} onFinish={() => { setPreviewOpen(false) }} />
-    </div> : null}
+    {previewOpen && url !== undefined && <ImageLightbox lang={lang} onClose={() => setPreviewOpen(false)}>
+      {gif.player !== undefined
+        ? <GifEditLightbox edit={edit} gif={gif} player={gif.player} alt={activeAttachment?.name ?? 'Generated image preview'} poster={url} onClose={() => setPreviewOpen(false)} onDragStart={onDragStart} />
+        : <>
+          <ImageViewport key={url}><img className="dsh-ig-lightbox-img" src={url} alt={activeAttachment?.name ?? 'Generated image preview'} /></ImageViewport>
+          <GifEditDoneDock edit={edit} onFinish={() => setPreviewOpen(false)} />
+        </>}
+    </ImageLightbox>}
     {regenerateOpen && activeResult !== undefined ? <div className="dsh-ig-regenerate-backdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget && !isRegenerating) setRegenerateOpen(false)
     }}>
@@ -597,12 +581,9 @@ function SvgResultCard({ result, locale, openFile }: {
       ? <div className="dsh-ig-savedto">{t('savedToPath')}: {openFile === undefined ? savedTo : <button type="button" className="dsh-ig-savedto-open" title={savedTo} onClick={() => { openFile(savedTo) }}>{savedTo}</button>}</div>
       : null}
     <div className="dsh-ig-container">
-      <img
-        className="dsh-ig-image"
-        src={url}
-        alt={result.prompt || 'Generated SVG'}
-        onClick={() => { setPreviewOpen(true) }}
-      />
+      <button type="button" className="dsh-ig-open-preview" onClick={() => setPreviewOpen(true)}>
+        <img className="dsh-ig-image" src={url} alt={result.prompt || 'Generated SVG'} />
+      </button>
       <div className={toast !== undefined ? 'dsh-ig-toolbar is-pinned' : 'dsh-ig-toolbar'}>
         <button type="button" className="dsh-ig-tool-btn" title={t('svgCopy')} onClick={copyMarkup}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>
@@ -618,11 +599,9 @@ function SvgResultCard({ result, locale, openFile }: {
         {toast ? <div className="dsh-ig-toast">{toast}</div> : null}
       </div>
     </div>
-    {previewOpen ? <div className="dsh-ig-lightbox-backdrop" onClick={() => { setPreviewOpen(false) }}>
-      <div className="dsh-ig-lightbox-img-wrap" onClick={(event) => { event.stopPropagation() }}>
-        <img className="dsh-ig-lightbox-img" src={url} alt={result.prompt || 'Generated SVG preview'} />
-      </div>
-    </div> : null}
+    {previewOpen && <ImageLightbox lang={lang} onClose={() => setPreviewOpen(false)}>
+      <ImageViewport><img className="dsh-ig-lightbox-img" src={url} alt={result.prompt || 'Generated SVG preview'} /></ImageViewport>
+    </ImageLightbox>}
   </section>
 }
 

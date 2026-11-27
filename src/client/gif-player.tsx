@@ -466,7 +466,7 @@ interface GifStageProps {
 /** Paints the current frame on a canvas once decoded; the raw GIF plays in an <img> until then or when decoding is not possible. */
 export function GifStage({ player, stage, className, alt, poster, onClick, onDragStart }: GifStageProps) {
   const snapshot = useGifSnapshot(player)
-  const stageRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<HTMLSpanElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // Observe the wrapper, not the media element: the <img> and the <canvas>
@@ -500,9 +500,9 @@ export function GifStage({ player, stage, className, alt, poster, onClick, onDra
   // A canvas is not draggable by default; an <img> is, so it keeps its default when no handler is given.
   const draggable = onDragStart === undefined ? undefined : true
   const still = !snapshot.playing && snapshot.status !== 'fallback' ? poster : undefined
-  return <div ref={stageRef} className="dsh-ig-gif-stage">
+  return <span ref={stageRef} className="dsh-ig-gif-stage">
     {frame !== undefined && first !== undefined
       ? <canvas ref={canvasRef} className={className} width={first.width} height={first.height} role="img" aria-label={alt} draggable={draggable} onClick={onClick} onDragStart={onDragStart} />
       : <img className={className} src={still ?? player.url} alt={alt} draggable={draggable} onClick={onClick} onDragStart={onDragStart} />}
-  </div>
+  </span>
 }

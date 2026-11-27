@@ -42,6 +42,7 @@ export declare const DICT: {
         readonly favoriteAdded: "已添加到收藏";
         readonly favoriteRemoved: "已取消收藏";
         readonly preview: "查看大图";
+        readonly previewFailed: "图片加载失败";
         readonly download: "下载图片";
         readonly copyImg: "复制图片";
         readonly copyPpt: "复制 Prompt";
@@ -158,6 +159,7 @@ export declare const DICT: {
         readonly favoriteAdded: "Added to favorites";
         readonly favoriteRemoved: "Removed from favorites";
         readonly preview: "Full Preview";
+        readonly previewFailed: "Image could not be loaded";
         readonly download: "Download";
         readonly copyImg: "Copy Image";
         readonly copyPpt: "Copy Prompt";

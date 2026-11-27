@@ -32,10 +32,11 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
-import { GIF_FRAME_COUNT_MIN, GIF_FRAME_COUNT_MAX, GIF_FRAME_DURATION_MS_MIN, GIF_FRAME_DURATION_MS_MAX, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, STUDIO_ROUTE, thumbUrlFor, isSubscriptionProvider, studioWatermarkCapability, studioModelForMode, studioModelOptionsForMode, studioTargetKey, type CloudImageProvider, type StudioConfigResponse, type StudioGenerateResponse, type StudioGeneratedItem, type StudioProvider, type StudioProviderProfile, type StudioReference, type StudioWatermark } from '../shared.js'
+import { GIF_FRAME_COUNT_MIN, GIF_FRAME_COUNT_MAX, GIF_FRAME_DURATION_MS_MIN, GIF_FRAME_DURATION_MS_MAX, DELETE_ROUTE, SAVE_WORKSPACE_ROUTE, STUDIO_ROUTE, thumbUrlFor, vaultUrlFor, isSubscriptionProvider, studioWatermarkCapability, studioModelForMode, studioModelOptionsForMode, studioTargetKey, type CloudImageProvider, type StudioConfigResponse, type StudioGenerateResponse, type StudioGeneratedItem, type StudioProvider, type StudioProviderProfile, type StudioReference, type StudioWatermark } from '../shared.js'
 import { deleteGalleryItem, getGalleryItems, subscribeGallery, toggleFavoriteGalleryItem, type GalleryItem, saveFavoritePrompt, getFavoritePrompts, deleteFavoritePrompt, subscribeFavorites, addFavoriteFolder, getFavoriteFolders, deleteFavoriteFolder, moveFavoritePrompt, updateFavoritePrompt, type FavoritePrompt, type FavoriteFolder } from './gallery-store.js'
 import { persistGalleryRecord } from './gallery-media.js'
 import { imageVersionKey } from './image-result-node.js'
+import { ImageLightbox, ImageViewport } from './image-lightbox.js'
 import { studioSession, type StudioViewState } from './studio-session.js'
 import { copyImageBlob, downloadBlobUrl, formatRelativeTime } from './browser-image-utils.js'
 import { buildComparisonTargets, comparisonOptionUnion, comparisonOutputOptions, initialComparisonProviders } from './multi-model-compare.js'
@@ -339,11 +340,14 @@ export const StudioView: FC<{
 
   const [dragging, setDragging] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [failedOriginal, setFailedOriginal] = useState<string>()
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteWorkspaceFiles, setDeleteWorkspaceFiles] = useState(true)
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const image = useAttachmentImage(selected?.attachment)
+  const original = lightboxOpen ? selected?.original : undefined
+  const previewSrc = original && original.key !== failedOriginal ? vaultUrlFor(original.key, original.mediaType) : image.url
 
   useEffect(() => {
     if (initialPrompt === undefined) return
@@ -549,17 +553,6 @@ export const StudioView: FC<{
     }
   }, [])
 
-  // Support Escape to close Lightbox
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && lightboxOpen) {
-        setLightboxOpen(false)
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [lightboxOpen])
-
   // Non-passive wheel zoom on canvas to prevent page scrolling and provide smooth zooming
   useEffect(() => {
     const canvasEl = canvasRef.current
@@ -732,8 +725,9 @@ export const StudioView: FC<{
     }
   }
 
-  const handleImageClick = () => {
-    // Canvas click is for selection, not preview
+  const openLightbox = () => {
+    setFailedOriginal(undefined)
+    setLightboxOpen(true)
   }
 
   /** Keep the current prompt text in the favorites rail. */
@@ -1394,6 +1388,7 @@ export const StudioView: FC<{
     }
   })
 
+  const toast = notice !== null && <div className="dsh-ig-workbench-toast">{notice}</div>
   return (
     <section ref={workbenchRootRef} className="dsh-ig-workbench" aria-label={t('title')}>
       <div className={`dsh-ig-workbench-grid ${sidebarCollapsed ? 'is-sidebar-collapsed' : ''} ${generateCollapsed ? 'is-generate-collapsed' : ''}`}>
@@ -1635,7 +1630,7 @@ export const StudioView: FC<{
                 </button>
               )}
               {canvasSurface === 'preview' && (
-                <button type="button" onClick={() => setLightboxOpen(true)} title={t('fullscreen')} disabled={selected === null}><Expand size={16} /></button>
+                <button type="button" onClick={openLightbox} title={t('fullscreen')} disabled={selected === null}><Expand size={16} /></button>
               )}
               {generateCollapsed && (
                 <button
@@ -1729,7 +1724,7 @@ export const StudioView: FC<{
                 src={image.url}
                 alt={selected.prompt}
                 draggable={false}
-                onClick={handleImageClick}
+                onClick={() => { if (!hasDraggedRef.current) openLightbox() }}
                 style={{
                   transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom / 100})`,
                   transformOrigin: 'center center',
@@ -1962,30 +1957,17 @@ export const StudioView: FC<{
         )}
       </div>
 
-      {/* Unified Pure Centered Lightbox Modal (Aligned with Gallery) */}
       {lightboxOpen && selected !== null && (
-        <div className="dsh-ig-lightbox-backdrop" onClick={() => setLightboxOpen(false)}>
-          <div className="dsh-ig-lightbox-topbar">
-            <div className="dsh-ig-lightbox-meta">
-              <span className="dsh-ig-tag">{selected.provider}</span>
-              <span className="dsh-ig-tag dsh-ig-tag-model">{selected.model}</span>
-              {currentBatch && currentBatch.length > 1 && (
-                <span className="dsh-ig-tag">
-                  {currentBatch.findIndex(i => i.id === selected.id) + 1} / {currentBatch.length}
-                </span>
-              )}
-              {selected.attachment.width && selected.attachment.height ? (
-                <span className="dsh-ig-tag">{selected.attachment.width} × {selected.attachment.height}</span>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className="dsh-ig-lightbox-close-btn"
-              title={t('close')}
-              onClick={() => setLightboxOpen(false)}
-            >
-              <X size={18} />
-            </button>
+        <ImageLightbox lang={lang} onClose={() => setLightboxOpen(false)}>
+          <div className="dsh-ig-lightbox-meta">
+            <span className="dsh-ig-tag">{selected.provider}</span>
+            <span className="dsh-ig-tag dsh-ig-tag-model">{selected.model}</span>
+            {currentBatch && currentBatch.length > 1 && (
+              <span className="dsh-ig-tag">{currentBatch.findIndex(i => i.id === selected.id) + 1} / {currentBatch.length}</span>
+            )}
+            {selected.attachment.width && selected.attachment.height ? (
+              <span className="dsh-ig-tag">{selected.attachment.width} × {selected.attachment.height}</span>
+            ) : null}
           </div>
 
           {currentBatch && currentBatch.length > 1 && (
@@ -2015,19 +1997,20 @@ export const StudioView: FC<{
             </>
           )}
 
-          <div className="dsh-ig-lightbox-img-wrap" onClick={e => e.stopPropagation()}>
-            {image.url !== null ? (
+          <ImageViewport key={selected.id}>
+            {previewSrc !== null ? (
               <img
                 className="dsh-ig-lightbox-img"
-                src={image.url}
+                src={previewSrc}
                 alt={selected.prompt}
+                onError={() => setFailedOriginal(original?.key)}
               />
             ) : (
               <div className="dsh-ig-lightbox-loading">
-                <div className="dsh-ig-lightbox-spinner" />
+                {image.loading ? <div className="dsh-ig-lightbox-spinner" /> : t('imageLoadFailed')}
               </div>
             )}
-          </div>
+          </ImageViewport>
 
           <div className="dsh-ig-lightbox-bottombar" onClick={e => e.stopPropagation()}>
             <div className="dsh-ig-lightbox-prompt-text" title={selected.prompt}>
@@ -2093,7 +2076,8 @@ export const StudioView: FC<{
               </button>
             </div>
           </div>
-        </div>
+          {toast}
+        </ImageLightbox>
       )}
 
       {showClearCanvasModal && (
@@ -2148,7 +2132,7 @@ export const StudioView: FC<{
       )}
 
       {/* Unified Floating Toast */}
-      {notice !== null && <div className="dsh-ig-workbench-toast">{notice}</div>}
+      {!lightboxOpen && toast}
     </section>
   )
 }

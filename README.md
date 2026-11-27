@@ -1,5 +1,6 @@
-> **这是 [shanliuling/dsh-image-gen](https://github.com/shanliuling/dsh-image-gen) 的 fork**，包名为 `@forever-lwy/dsh-image-gen`，安装来源为 `github:forever-lwy/dsh-image-gen`（默认分支 `release` 存放预构建版本）。版本号为上游 `x.y.(patch×100+N)`，本版 0.12.301 基于上游 0.12.3。与上游的差异：
+> **这是 [shanliuling/dsh-image-gen](https://github.com/shanliuling/dsh-image-gen) 的 fork**，包名为 `@forever-lwy/dsh-image-gen`，安装来源为 `github:forever-lwy/dsh-image-gen`（默认分支 `release` 存放预构建版本）。版本号为上游 `x.y.(patch×100+N)`，本版 0.12.302 基于上游 0.12.3。与上游的差异：
 >
+> - 点击聊天、图库或工作台单图预览中的图片即可全屏查看。用滚轮、双指或「＋／－」缩放，放大后可拖动查看细节。「1:1」按原图像素显示，「适应窗口」恢复整图。
 > - 0.12.301 同步上游 0.12.3，支持 ModelScope 异步生图、Seedream 分层导出、透明背景，以及按需画布的 tldraw 授权配置。
 > - 针对 DSH `0.2.2-rc.5` 构建与验证，设置统一走 `configForms`，删除旧 `settingsScope` / `installSection` 桥接；历史图片和配置迁移继续保留。
 > - tldraw 无限画布拆为按需加载的 `client.canvas.js`，首次显示画布时才下载；主包从约 5.1MB 降到约 0.8MB。
