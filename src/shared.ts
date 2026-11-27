@@ -40,7 +40,7 @@ export function thumbUrlFor(ref: ImageAttachmentRef, width = 320): string {
   return THUMB_ROUTE + '?w=' + String(width) + '&ref=' + encodeImageRef(ref)
 }
 
-/** Mid-size preview used by the lightbox; originals stay for copy/download/drag. */
+/** Cached mid-size image for the gallery viewer's initial fit-to-window view. */
 export function previewUrlFor(ref: ImageAttachmentRef): string {
   return PREVIEW_ROUTE + '?ref=' + encodeImageRef(ref)
 }

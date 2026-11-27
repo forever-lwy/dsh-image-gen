@@ -443,10 +443,10 @@ export function GifEditLightbox({ edit, ...props }: GifLightboxProps & { edit: G
 
   useEffect(() => {
     if (!editing) return
-    // Bubble phase on the document: a note box stops its own Escape first,
-    // and the card's window listener that closes the lightbox never sees this one.
+    // A note box handles its own Escape first. In the editor, dismiss only editing.
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      event.preventDefault()
       event.stopPropagation()
       leave()
     }
@@ -464,6 +464,7 @@ export function GifEditLightbox({ edit, ...props }: GifLightboxProps & { edit: G
   return <GifLightbox
     {...props}
     wrapClassName={editing ? (view === 'sheet' ? 'is-editing is-sheet' : 'is-editing') : undefined}
+    sheetSize={editing && view === 'sheet' ? sheet?.plan : undefined}
     frameMarks={frames}
     stageOverlay={<>
       <GifCommentLayer player={player} editing={editing} view={view} sheet={sheet} comments={edit.comments} onChange={edit.setComments} t={t} />

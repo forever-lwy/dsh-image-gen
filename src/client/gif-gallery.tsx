@@ -67,9 +67,9 @@ export function useGalleryGifPreview(item: GalleryItem | null, lang: 'zh' | 'en'
   return { t: gifT(lang), player, item: loaded.item }
 }
 
-/** The preview's animation, in place of the gallery image; sized to leave room for the player bar. */
+/** The animation shares the still preview's zoomable frame. */
 export function GalleryGifStage({ preview, poster }: { preview: GalleryGifPreview; poster: string | undefined }) {
-  return <GifStage player={preview.player} stage="gallery" className="dsh-ig-lightbox-img dsh-ig-gallery-gif-img" alt={preview.item.prompt} poster={poster} />
+  return <GifStage player={preview.player} stage="gallery" className="dsh-ig-lightbox-img" alt={preview.item.prompt} poster={poster} />
 }
 
 /** The player bar, floating above the gallery's own bottom bar. */

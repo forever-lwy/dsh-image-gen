@@ -3,7 +3,7 @@
  * Fully i18n-reactive (Chinese & English) with modular tabs, multi-dimensional filters,
  * responsive image grid, and placeholder routes.
  */
-import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useState, useMemo, useRef, type FC, type MouseEvent } from 'react'
+import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useState, useMemo, useRef, type FC, type MouseEvent, type ReactNode } from 'react'
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { DELETE_ROUTE, IMPORT_ROUTE, STORAGE_STATS_ROUTE, ZIP_CANCEL_ROUTE, ZIP_PROGRESS_ROUTE, ZIP_ROUTE, imageUrlFor, previewUrlFor, thumbUrlFor, vaultUrlFor, type ImageProvider } from '../shared.js'
 import {
@@ -40,6 +40,8 @@ import {
   type GalleryItem,
 } from './gallery-store.js'
 import { StudioView } from './studio-view.js'
+import { ImageLightbox, ImageViewport } from './image-lightbox.js'
+import { useGifReadable } from './gif-player.js'
 import { deselectStudioTlCanvases } from './tl/studio-tl-registry.js'
 import { InspirationView } from './inspiration-view.js'
 import { evictAttachmentCache, fetchAttachmentBlob } from './image-cache.js'
@@ -242,6 +244,7 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
 
   const dict = lang === 'en' ? DICT.en : DICT.zh
   const gifPreview = useGalleryGifPreview(previewItem, lang)
+  const gifSize = useGifReadable(gifPreview?.player) ? gifPreview?.player.getSnapshot().info : undefined
   // Stable identity: memoized cards only re-render when their own state changes.
   const t = useMemo(() => {
     return (key: DictKey, params?: Record<string, string>): string => {
@@ -408,7 +411,7 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
     }
   }, [])
 
-  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewFailed, setPreviewFailed] = useState(false)
 
   // Multi-dimensional filtering and sorting (Provider, Ratio, Search, and Sort)
   const filteredItems = useMemo(() => {
@@ -521,22 +524,19 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
       previewUrlRef.current = null
     }
     setPreviewItem(item)
+    setPreviewFailed(false)
 
     if (blob) {
       const url = URL.createObjectURL(blob)
       previewUrlRef.current = url
       setPreviewBlob(blob)
       setPreviewUrl(url)
-      setPreviewLoading(false)
       prefetchPreviewNeighbors(item)
       return
     }
 
     setPreviewBlob(null)
-    // Show a 1600 px variant here; the full-resolution attachment stays for
-    // copy/download/drag. The lightbox falls back to the original GET and then
-    // to the blob form when a host cannot derive the variant.
-    setPreviewLoading(true)
+    // Paint the cached 1600 px variant at fit. Inspecting detail loads the original.
     setPreviewUrl(previewUrlFor(item.attachment))
     prefetchPreviewNeighbors(item)
   }
@@ -558,7 +558,6 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
     setPreviewItem(null)
     setPreviewUrl(null)
     setPreviewBlob(null)
-    setPreviewLoading(false)
   }
 
   const goToPrev = () => {
@@ -681,6 +680,7 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
   // Clean up only on component unmount
   useEffect(() => {
     return () => {
+      previewRequestRef.current += 1
       if (regenerateControllerRef.current) regenerateControllerRef.current.abort()
       clearPreviewPrefetch()
       closeZipProgress()
@@ -691,9 +691,6 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
   // Keyboard navigation: Esc (close modal or preview), ArrowLeft (prev), ArrowRight (next)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
-        return
-      }
       if (showRegenerateModal) {
         if (e.key === 'Escape') {
           e.preventDefault()
@@ -702,17 +699,15 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
         return
       }
       if (showDeleteModal) {
-        if (e.key === 'Escape' && !isDeleting) {
+        if (e.key === 'Escape') {
           e.preventDefault()
-          setShowDeleteModal(false)
-          if (!isManageMode) setSelectedIds(new Set())
+          cancelDelete()
         }
         return
       }
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return
       if (previewItem) {
-        if (e.key === 'Escape') {
-          handleClosePreview()
-        } else if (e.key === 'ArrowLeft' || e.key === 'Left') {
+        if (e.key === 'ArrowLeft' || e.key === 'Left') {
           e.preventDefault()
           goToPrev()
         } else if (e.key === 'ArrowRight' || e.key === 'Right') {
@@ -1110,6 +1105,11 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
     setSelectedIds(new Set([item.id]))
     setShowDeleteModal(true)
   }
+  const cancelDelete = () => {
+    if (isDeleting) return
+    setShowDeleteModal(false)
+    if (!isManageMode) setSelectedIds(new Set())
+  }
 
   const hasWorkspaceFilesToDelete = useMemo(
     () => items.some(i => selectedIds.has(i.id) && typeof i.savedTo === 'string' && i.savedTo.trim().length > 0),
@@ -1213,6 +1213,42 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
       toast: showToast,
     }
   })
+
+  const showingVariant = previewItem !== null && previewUrl === previewUrlFor(previewItem.attachment)
+  const attachmentSize = previewItem && (showingVariant || previewUrl === imageUrlFor(previewItem.attachment)) ? previewItem.attachment : undefined
+  const inspectOriginal = () => {
+    if (!showingVariant || !previewItem) return
+    setPreviewUrl(previewItem.original
+      ? vaultUrlFor(previewItem.original.key, previewItem.original.mediaType)
+      : imageUrlFor(previewItem.attachment))
+  }
+  const previewError = () => {
+    if (!previewItem || !previewUrl || previewUrl !== previewUrlRef.current) return
+    if (previewUrl.startsWith('blob:')) {
+      setPreviewFailed(true)
+      return
+    }
+    const original = imageUrlFor(previewItem.attachment)
+    if (previewUrl !== original) {
+      setPreviewUrl(original)
+      return
+    }
+    // Older hosts only support the attachment's POST form.
+    const requestId = previewRequestRef.current
+    void fetchAttachmentBlob(previewItem.attachment).then(blob => {
+      if (previewRequestRef.current !== requestId) return
+      const objectUrl = URL.createObjectURL(blob)
+      previewUrlRef.current = objectUrl
+      setPreviewBlob(blob)
+      setPreviewUrl(objectUrl)
+    }, () => { if (previewRequestRef.current === requestId) setPreviewFailed(true) })
+  }
+  // Confirmations and feedback opened from the viewer must share its fullscreen surface.
+  const withPreview = (content: ReactNode) => previewItem === null ? content : (
+    <ImageLightbox lang={lang} onClose={showRegenerateModal ? handleCancelRegeneratePrompt : showDeleteModal ? cancelDelete : handleClosePreview}>
+      {content}
+    </ImageLightbox>
+  )
 
   return (
     <div className={`dsh-ig-gallery-page${inSidebar ? ' dsh-ig-page-in-sidebar' : ''}`} data-conversation-composer-overlay="">
@@ -1442,8 +1478,6 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
         )}
       </div>
 
-      {toast && <div className="dsh-ig-gallery-page-toast">{toast}</div>}
-
       {/* 4. Floating Batch Action Bar */}
       {shouldShowBatchBar(activeTab, isManageMode, selectedIds.size) && (
         <div className="dsh-ig-batch-bar">
@@ -1551,16 +1585,13 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
         </div>
       )}
 
+      {withPreview(<>
+      {toast && <div className="dsh-ig-gallery-page-toast">{toast}</div>}
       {/* 5. Delete Confirmation Modal (Unified for single & batch) */}
       {showDeleteModal && (
         <div
           className="dsh-ig-modal-backdrop"
-          onClick={() => {
-            if (!isDeleting) {
-              setShowDeleteModal(false)
-              if (!isManageMode) setSelectedIds(new Set())
-            }
-          }}
+          onClick={cancelDelete}
         >
           <div className="dsh-ig-modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="dsh-ig-modal-header">
@@ -1596,10 +1627,7 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
               <button
                 type="button"
                 className="dsh-ig-modal-btn dsh-ig-modal-btn-cancel"
-                onClick={() => {
-                  setShowDeleteModal(false)
-                  if (!isManageMode) setSelectedIds(new Set())
-                }}
+                onClick={cancelDelete}
                 disabled={isDeleting}
               >
                 {t('cancel')}
@@ -1741,34 +1769,11 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
 
       {/* 4. Lightbox Preview Modal */}
       {previewItem && (
-        <div
-          className="dsh-ig-lightbox-backdrop"
-          onClick={handleClosePreview}
-        >
-          {/* Top Bar: Info, Index Counter & Close */}
-          <div
-            className="dsh-ig-lightbox-topbar"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="dsh-ig-lightbox-meta">
-              <span className="dsh-ig-tag">{previewItem.provider === 'import' ? t('filterImport') : previewItem.provider}</span>
-              {previewItem.model ? (
-                <span className="dsh-ig-tag dsh-ig-tag-model">{previewItem.model}</span>
-              ) : null}
-              {currentPreviewIndex >= 0 && (
-                <span className="dsh-ig-lightbox-counter">
-                  {currentPreviewIndex + 1} / {filteredItems.length}
-                </span>
-              )}
-            </div>
-            <button
-              type="button"
-              className="dsh-ig-lightbox-close-btn"
-              title={t('close')}
-              onClick={handleClosePreview}
-            >
-              <X size={18} />
-            </button>
+        <>
+          <div className="dsh-ig-lightbox-meta">
+            <span className="dsh-ig-tag">{previewItem.provider === 'import' ? t('filterImport') : previewItem.provider}</span>
+            {previewItem.model ? <span className="dsh-ig-tag dsh-ig-tag-model">{previewItem.model}</span> : null}
+            {currentPreviewIndex >= 0 && <span className="dsh-ig-lightbox-counter">{currentPreviewIndex + 1} / {filteredItems.length}</span>}
           </div>
 
           {/* Floating Prev Button (Left) */}
@@ -1799,52 +1804,16 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
             <ChevronRight size={24} />
           </button>
 
-          {/* Centered Image / Loading state */}
-          <div className="dsh-ig-lightbox-img-wrap" onClick={(e) => e.stopPropagation()}>
-            {/* Render the image first: the GET route paints progressively, and
-                gating it on previewLoading left the spinner on screen forever
-                because the <img> never mounted to fire onLoad. */}
-            {gifPreview !== undefined ? <GalleryGifStage preview={gifPreview} poster={previewUrl ?? undefined} /> : previewUrl ? (
-              <img
-                className="dsh-ig-lightbox-img"
-                src={previewUrl}
-                alt={previewItem.prompt}
-                decoding="async"
-                onLoad={() => setPreviewLoading(false)}
-                onError={() => {
-                  const failedUrl = previewUrl
-                  // A blob URL that cannot be decoded is terminal; retrying
-                  // would bounce between the original and a fresh blob forever.
-                  if (failedUrl.startsWith('blob:')) {
-                    setPreviewLoading(false)
-                    return
-                  }
-                  const original = imageUrlFor(previewItem.attachment)
-                  if (failedUrl !== original) {
-                    // The 1600 px variant is unavailable; fall back to the
-                    // original GET before giving up on the route entirely.
-                    if (previewUrlRef.current !== null) URL.revokeObjectURL(previewUrlRef.current)
-                    previewUrlRef.current = null
-                    setPreviewBlob(null)
-                    setPreviewUrl(original)
-                    return
-                  }
-                  const requestId = previewRequestRef.current
-                  fetchAttachmentBlob(previewItem.attachment)
-                    .then((fetched) => {
-                      if (previewRequestRef.current !== requestId) return
-                      if (previewUrlRef.current !== null) URL.revokeObjectURL(previewUrlRef.current)
-                      const objectUrl = URL.createObjectURL(fetched)
-                      previewUrlRef.current = objectUrl
-                      setPreviewBlob(fetched)
-                      setPreviewUrl(objectUrl)
-                      setPreviewLoading(false)
-                    })
-                    .catch(() => setPreviewLoading(false))
-                }}
-              />
-            ) : null}
-          </div>
+          {previewFailed && !gifPreview ? (
+            <div className="dsh-ig-viewer-status" role="status">{t('previewFailed')}</div>
+          ) : (
+            <ImageViewport key={previewItem.id} size={gifPreview ? gifSize : attachmentSize}
+              onInspect={showingVariant && !gifPreview ? inspectOriginal : undefined}>
+              {gifPreview !== undefined ? <GalleryGifStage preview={gifPreview} poster={previewUrl ?? undefined} /> : previewUrl ? (
+                <img className="dsh-ig-lightbox-img" src={previewUrl} alt={previewItem.prompt} decoding="async" onError={previewError} />
+              ) : null}
+            </ImageViewport>
+          )}
 
           {gifPreview !== undefined ? <GalleryGifBar preview={gifPreview} /> : null}
           {/* Bottom Floating Pill Bar: Prompt & Actions */}
@@ -1894,9 +1863,7 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
                 className="dsh-ig-lightbox-btn"
                 title={t('download')}
                 onClick={async () => {
-                  // The lightbox shows a 1600 px variant; downloads keep the
-                  // original bytes and fall back to the attachment when the vault
-                  // copy was evicted.
+                  // Prefer the original bytes while the vault copy is available.
                   try {
                     const blob = previewItem.original !== undefined
                       ? await fetchOriginalBlob(previewItem)
@@ -1953,8 +1920,9 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
               </button>
             </div>
           </div>
-        </div>
+        </>
       )}
+      </>)}
     </div>
   )
 }

@@ -1,6 +1,7 @@
 /** Styles of the GIF player (card overlays, the lightbox player, its menus, the gallery hover) and of the card's saved-file link. */
 export const GIF_STYLE = `
 /* The host draws corners as superellipses; circles and pills here say corner-shape:round, as the host's own do. */
+.dsh-ig-gif-stage{display:block}
 .dsh-ig-savedto-open{appearance:none;display:inline-block;max-width:calc(100% - 5em);margin:0;padding:0;border:0;background:none;font:inherit;color:var(--dsw-alias-link,#3b6cf0);text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;cursor:pointer}
 .dsh-ig-savedto-open:hover{text-decoration:underline}
 .dsh-ig-container.is-gif-open{overflow:visible}
@@ -32,7 +33,7 @@ export const GIF_STYLE = `
 .dsh-ig-speed-input{position:absolute;inset:0;width:28px;height:150px;margin:0;opacity:0;writing-mode:vertical-lr;direction:rtl;cursor:pointer}
 .dsh-ig-dl{position:relative;display:inline-flex}
 .dsh-ig-dl-menu{position:absolute;top:calc(100% + 8px);left:0;width:236px;box-sizing:border-box;padding:6px;border-radius:12px;background:var(--dsw-alias-bg-layer-3,#fff);box-shadow:0 10px 30px rgba(15,23,42,0.18),0 0 0 1px rgba(15,23,42,0.06);z-index:20;line-height:normal}
-.dsh-ig-dl-lightbox .dsh-ig-dl-menu{left:auto;right:0;box-shadow:0 10px 30px rgba(0,0,0,0.4)}
+.dsh-ig-dl-lightbox .dsh-ig-dl-menu{left:0;right:auto;box-shadow:0 10px 30px rgba(0,0,0,0.4)}
 .dsh-ig-dl-item{appearance:none;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;min-height:44px;padding:8px 14px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:14px;text-align:left;cursor:pointer}
 .dsh-ig-dl-item>span:first-child{font-weight:500}
 .dsh-ig-dl-item:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2,#f2f4f7)}
@@ -43,15 +44,14 @@ export const GIF_STYLE = `
 .dsh-ig-dl-lightbox .dsh-ig-dl-item,.dsh-ig-dl-gallery .dsh-ig-dl-item{color:#1f2329}
 .dsh-ig-dl-lightbox .dsh-ig-dl-item:hover:not(:disabled),.dsh-ig-dl-gallery .dsh-ig-dl-item:hover:not(:disabled){background:#f2f4f7}
 .dsh-ig-dl-lightbox .dsh-ig-dl-hint,.dsh-ig-dl-gallery .dsh-ig-dl-hint{color:#8a8f99}
-.dsh-ig-gif-actions{position:absolute;top:20px;right:20px;display:flex;align-items:center;gap:10px;z-index:10}
+.dsh-ig-gif-actions{grid-area:1/1;display:flex;align-items:center;gap:4px;margin-left:6px;z-index:10}
 .dsh-ig-gif-action{corner-shape:round;appearance:none;border:0;height:40px;min-width:40px;padding:0 12px;border-radius:999px;background:rgba(255,255,255,0.12);color:#fff;display:inline-flex;align-items:center;justify-content:center;gap:4px;font-size:13px;cursor:pointer}
 .dsh-ig-gif-action:hover{background:rgba(255,255,255,0.22)}
 .dsh-ig-gif-toast{position:absolute;top:72px;right:20px;font-size:12px;color:rgba(255,255,255,0.8);z-index:10}
 /* The lightbox is always dark, so its accents use a fixed blue: the host's brand colour is neutral (near-black, or near-white in its dark theme). */
-.dsh-ig-gif-dock{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:stretch;gap:10px;max-width:calc(100vw - 48px);z-index:10;cursor:default}
+.dsh-ig-gif-dock{grid-area:3/1/4/-1;justify-self:center;display:flex;flex-direction:column;align-items:stretch;gap:8px;max-width:100%;padding:6px;box-sizing:border-box;z-index:10;cursor:default}
 .dsh-ig-gif-bar{corner-shape:round;display:flex;align-items:center;gap:10px;padding:6px;border-radius:999px;background:rgba(255,255,255,0.1);box-shadow:0 0 0 1px rgba(255,255,255,0.08);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-sizing:border-box;max-width:calc(100vw - 48px);color:#fff;line-height:normal}
-/* No z-index: the gallery's bottom bar, later in the page, paints over this one, so its download menu opens on top. */
-.dsh-ig-gif-bar-gallery{position:absolute;bottom:128px;left:50%;transform:translateX(-50%)}
+.dsh-ig-gif-bar-gallery{grid-area:3/1/4/-1;justify-self:center;margin-top:6px}
 .dsh-ig-gif-play{corner-shape:round;appearance:none;flex:none;width:44px;height:44px;border:0;border-radius:50%;background:#fff;color:#0d0f13;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
 .dsh-ig-gif-play:disabled{opacity:.5;cursor:default}
 .dsh-ig-gif-bar .dsh-ig-speed-trigger{corner-shape:round;appearance:none;min-width:56px;height:44px;padding:0 12px;border:0;border-radius:999px;background:rgba(255,255,255,0.12);color:#fff;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer}
@@ -63,12 +63,9 @@ export const GIF_STYLE = `
 .dsh-ig-gif-strip-head{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:#5b8cff;pointer-events:none}
 @keyframes dsh-ig-gif-pulse{50%{opacity:.6}}
 .dsh-ig-gif-strip-mark{corner-shape:round;position:absolute;top:3px;width:7px;height:7px;margin-left:-3.5px;border-radius:50%;background:#5b8cff;box-shadow:0 0 0 1.5px #fff;pointer-events:none}
-/* The frame stays clear of the bars under it: it is lifted by their measured height (--dsh-ig-gif-dock-h) and sized to fit above them. */
-.dsh-ig-gif-wrap{position:relative;max-height:none;margin-bottom:calc(var(--dsh-ig-gif-dock-h,56px) + 52px)}
-.dsh-ig-gif-wrap .dsh-ig-lightbox-img,.dsh-ig-gif-sheet{display:block;max-height:calc(100vh - var(--dsh-ig-gif-dock-h,56px) - 192px)}
 .dsh-ig-gif-wrap.is-editing{border-radius:10px;box-shadow:0 0 0 3px #3b6cf0}
 .dsh-ig-gif-wrap.is-sheet .dsh-ig-gif-stage{position:absolute;inset:0;overflow:hidden;opacity:0;pointer-events:none}
-.dsh-ig-gif-sheet{display:block;max-width:86vw;border-radius:10px;background:#1b1e24}
+.dsh-ig-gif-sheet{border-radius:10px;background:#1b1e24}
 .dsh-ig-gif-edit-chip-slot{position:absolute;right:12px;bottom:12px;z-index:3;line-height:normal}
 .dsh-ig-container:has(.dsh-ig-version-nav) .dsh-ig-gif-edit-chip-slot{bottom:48px}
 .dsh-ig-gif-edit-chip{display:inline-flex;align-items:center;gap:6px;padding:0 12px}
@@ -107,9 +104,6 @@ export const GIF_STYLE = `
 .dsh-ig-gif-edit-row.is-end{justify-content:flex-end}
 /* The plain preview has no player bar for the finished edit's bar to take its width from, and keeps the picture clear of it. */
 .dsh-ig-gif-dock.is-plain{width:min(560px,calc(100vw - 48px))}
-.dsh-ig-lightbox-backdrop:has(>.dsh-ig-gif-dock.is-plain) .dsh-ig-lightbox-img{max-height:calc(100vh - 320px)}
-/* The previews swap while a finished edit's new version loads; replaying their entrance would flash the page behind them. */
-.dsh-ig-lightbox-backdrop:has(.dsh-ig-gif-edit.is-done){animation:none}
 @keyframes dsh-ig-gif-spin{to{transform:rotate(360deg)}}
 @keyframes dsh-ig-gif-fade{from{opacity:0}}
 @media(prefers-reduced-motion:reduce){.dsh-ig-gif-edit-busy,.dsh-ig-gif-edit-busy *,.dsh-ig-gif-edit-spinner{animation:none!important;transition:none!important}}
@@ -153,7 +147,6 @@ export const GIF_STYLE = `
 .dsh-ig-gallery-gif-badge{position:absolute;left:10px;top:10px;padding:2px 7px;border-radius:6px;background:rgba(17,20,26,0.66);color:#fff;font-size:11px;font-weight:700;line-height:16px;letter-spacing:.3px;pointer-events:none;z-index:2;transition:opacity .15s ease}
 .dsh-ig-gallery-card:hover .dsh-ig-gallery-gif-badge,.dsh-ig-gallery-card.is-manage-mode .dsh-ig-gallery-gif-badge,.dsh-ig-gallery-card.is-selected .dsh-ig-gallery-gif-badge{opacity:0}
 .dsh-ig-gallery-gif-hover{position:absolute;inset:0;pointer-events:none}
-.dsh-ig-lightbox-img.dsh-ig-gallery-gif-img{max-height:calc(100vh - 400px)}
 .dsh-ig-dl-gallery .dsh-ig-dl-menu{top:auto;bottom:calc(100% + 8px);box-shadow:0 10px 30px rgba(0,0,0,0.4)}
 .dsh-ig-dl-gallery svg{width:14px;height:14px}
 `
